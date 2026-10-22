@@ -1,0 +1,18 @@
+{
+  "name": "miniprogram-ts-sass-quickstart",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "backend:test": "npm --prefix server test",
+    "backend:check": "npm --prefix server run check",
+    "backend:start": "npm --prefix server start"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "",
+  "dependencies": {
+  },
+  "devDependencies": {
+    "miniprogram-api-typings": "^2.8.3-1"
+  }
+}
