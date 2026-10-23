@@ -1,6 +1,7 @@
 const express = require('express')
 const crypto = require('node:crypto')
 const { createRepository } = require('./repository')
+const { createNotifier } = require('./notifications')
 const { HttpError, notFound, unauthorized } = require('./errors')
 const { approval, record, stats } = require('./serializers')
 const {
@@ -25,7 +26,7 @@ function asyncRoute(handler) {
   return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next)
 }
 
-function createApp({ repository = createRepository() } = {}) {
+function createApp({ repository = createRepository(), notifier = createNotifier() } = {}) {
   const app = express()
   app.disable('x-powered-by')
   app.use((request, response, next) => {
@@ -72,7 +73,17 @@ function createApp({ repository = createRepository() } = {}) {
 
   // 投票的去重、审批关闭判断和状态计算属于后端规则，不应由前端本地计算后直接覆盖结果。
   app.post('/api/v1/approvals/:approvalId/votes', asyncRoute(async (request, response) => {
-    const item = await repository.createVote(id(request.params.approvalId, 'approvalId'), validateVoteInput(request.body), openidFrom(request))
+    const voterOpenid = openidFrom(request)
+    const input = validateVoteInput(request.body)
+    const item = await repository.createVote(id(request.params.approvalId, 'approvalId'), input, voterOpenid)
+    if (item._openid && item._openid !== voterOpenid && notifier && typeof notifier.sendApprovalUpdate === 'function') {
+      try {
+        await notifier.sendApprovalUpdate({ openid: item._openid, approval: item, choice: input.choice, reason: input.reason })
+      } catch (error) {
+        // 投票已经持久化；微信发送失败不能把成功的投票报告成失败。
+        console.error(`[${response.get('x-request-id')}] subscribe message failed`, error)
+      }
+    }
     response.status(201).json({ data: approval(item) })
   }))
 

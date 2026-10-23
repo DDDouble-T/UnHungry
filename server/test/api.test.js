@@ -5,9 +5,19 @@ const { MemoryRepository } = require('../src/repository')
 
 let server
 let baseUrl
+const notifications = []
+let failNotifications = false
 
 test.before(async () => {
-  const app = createApp({ repository: new MemoryRepository({ seed: false }) })
+  const app = createApp({
+    repository: new MemoryRepository(),
+    notifier: {
+      async sendApprovalUpdate(payload) {
+        notifications.push(payload)
+        if (failNotifications) throw new Error('微信暂时不可用')
+      },
+    },
+  })
   server = await new Promise(resolve => {
     const value = app.listen(0, '127.0.0.1', () => resolve(value))
   })
@@ -34,6 +44,12 @@ test('health exposes service and storage mode', async () => {
   assert.equal(body.data.database, 'memory')
 })
 
+test('memory repository starts without demo approvals', async () => {
+  const { response, body } = await request('/api/v1/approvals')
+  assert.equal(response.status, 200)
+  assert.deepEqual(body.data, [])
+})
+
 test('API metadata lists all business routes', async () => {
   const { response, body } = await request('/api/v1')
   assert.equal(response.status, 200)
@@ -48,6 +64,7 @@ test('API metadata lists all business routes', async () => {
 })
 
 test('approval flow creates a record, closes after vote and supports check-in', async () => {
+  notifications.length = 0
   const owner = { 'x-dev-openid': 'owner-1' }
   const voter = { 'x-dev-openid': 'voter-1' }
   const { response: createResponse, body: createBody } = await request('/api/v1/approvals', {
@@ -72,6 +89,10 @@ test('approval flow creates a record, closes after vote and supports check-in', 
   assert.equal(voteResponse.status, 201)
   assert.equal(voteBody.data.status, 'approved')
   assert.equal(voteBody.data.supportRate, 100)
+  assert.equal(notifications.length, 1)
+  assert.equal(notifications[0].openid, 'owner-1')
+  assert.equal(notifications[0].approval._id, approvalId)
+  assert.equal(notifications[0].choice, 'approve')
 
   const duplicate = await request(`/api/v1/approvals/${approvalId}/votes`, {
     method: 'POST',
@@ -91,6 +112,23 @@ test('approval flow creates a record, closes after vote and supports check-in', 
   })
   assert.equal(checkin.response.status, 200)
   assert.equal(checkin.body.data.checkinResult, '真香')
+})
+
+test('a failed subscription message does not turn a committed vote into an API failure', async () => {
+  failNotifications = true
+  const { body: created } = await request('/api/v1/approvals', {
+    method: 'POST',
+    headers: { 'x-dev-openid': 'owner-2' },
+    body: JSON.stringify({ title: '豆花', price: 12, reason: '想吃甜的', alternative: '无糖酸奶' }),
+  })
+  const result = await request(`/api/v1/approvals/${created.data.id}/votes`, {
+    method: 'POST',
+    headers: { 'x-dev-openid': 'voter-2' },
+    body: JSON.stringify({ choice: 'wait', reason: '先吃正餐' }),
+  })
+  failNotifications = false
+  assert.equal(result.response.status, 201)
+  assert.equal(result.body.data.status, 'rejected')
 })
 
 test('invalid input is rejected with a stable error contract', async () => {

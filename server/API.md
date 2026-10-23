@@ -18,9 +18,11 @@
 - 食物热量推荐。小程序目前从 `miniprogram/data/foods.js` 本地读取。
 - 图片上传。接口只保存已经上传完成的云文件 ID 或 URL 字符串。
 - 个人饮食记录（不关联审批单）的新增接口。当前页面的“添加今日已吃食物”仍只写前端内存。
-- 亲友群、支付、内容审核、管理员后台和消息通知。
+- 亲友群、支付、内容审核和管理员后台。
 
-> 当前小程序页面仍使用本地 `seedApprovals`、`seedRecords` 和 `setData`，没有调用本 API。接入 API 后，应以接口返回值覆盖页面中的审批列表、我的记录和统计值，不能继续把本地种子数据当作真实数据源。
+投票 API 会在成功写入后尝试向审批发起人发送一次小程序订阅消息。发起人需在小程序端接受对应模板的一次性订阅；未配置微信凭据或消息发送失败不会影响投票结果。小程序页面当前仍使用本地演示状态，尚未调用这些业务 API，因此生产通知还需要先完成页面 API 接入。
+
+> 广场示例审批只保存在小程序前端，不写入后端。后端接口返回的审批均为真实用户提交的数据。
 
 ## 2. 通用约定
 
@@ -94,10 +96,10 @@
 | 字段 | 必填 | 类型和限制 |
 | --- | --- | --- |
 | `title`（或 `foodName`） | 是 | 字符串，最多 40 字符 |
-| `price` | 是 | 0 到 100000 的数字 |
+| `price` | 否 | 0 到 100000 的数字 |
 | `calorie` | 否 | 0 到 10000 的数字，缺省为 `null` |
 | `reason` | 是 | 字符串，最多 200 字符 |
-| `alternative` | 是 | 字符串，最多 100 字符，不能为空 |
+| `alternative` | 否 | 字符串，最多 100 字符 |
 | `intake` | 否 | 字符串，最多 100 字符 |
 | `image` | 否 | 字符串，最多 2048 字符 |
 
@@ -193,7 +195,7 @@ CloudBase 使用三个集合：
 - `approval_votes`：单次投票；文档 ID 为 `审批单 ID:用户 openid`，用于防重复投票。
 - `user_records`：发起人的个人审批记录和打卡结果。
 
-生产至少配置：`TCB_ENV_ID`（或 `CLOUDBASE_ENV_ID`）、`NODE_ENV=production`、`REQUIRE_OPENID=true`。建议建立索引：
+生产至少配置：`TCB_ENV_ID`（或 `CLOUDBASE_ENV_ID`）、`NODE_ENV=production`、`REQUIRE_OPENID=true`。启用订阅消息还需配置 `WECHAT_APP_ID`、`WECHAT_APP_SECRET`、`WECHAT_SUBSCRIBE_TEMPLATE_ID`。模板数据字段默认使用 `thing1`、`phrase2`、`thing3`，须按公众平台实际模板配置 `WECHAT_SUBSCRIBE_TITLE_FIELD`、`WECHAT_SUBSCRIBE_STATUS_FIELD`、`WECHAT_SUBSCRIBE_DETAIL_FIELD`。建议建立索引：
 
 - `approvals`: `status + createdAt`
 - `user_records`: `_openid + createdAt`、`approvalId + _openid`

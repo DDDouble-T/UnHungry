@@ -44,10 +44,10 @@ function validateApprovalInput(input) {
   const body = bodyObject(input)
   return {
     title: text(body.title ?? body.foodName, '食物名称', { required: true, max: 40 }),
-    price: number(body.price, '价格', { required: true, min: 0, max: 100000 }),
+    price: number(body.price, '价格', { min: 0, max: 100000 }),
     calorie: number(body.calorie, '热量', { min: 0, max: 10000 }),
     reason: text(body.reason, '想吃理由', { required: true, max: 200 }),
-    alternative: text(body.alternative, '替代方案', { required: true, max: 100 }),
+    alternative: text(body.alternative, '替代方案', { max: 100 }),
     intake: text(body.intake, '今日摄入', { max: 100 }),
     image: text(body.image, '食物照片', { max: 2048 }),
   }

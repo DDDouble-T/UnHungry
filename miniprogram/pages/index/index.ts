@@ -1,3 +1,6 @@
+import { requestApprovalSubscription } from '../../config'
+import { ApiApproval, createApproval, createApprovalVote, fetchApprovals, isApiConfigured, resolveApprovalImages, uploadApprovalImage } from '../../utils/api'
+
 type TabKey = 'square' | 'apply' | 'record' | 'me'
 type FilterKey = 'all' | 'pending' | 'approved' | 'rejected'
 type Status = 'pending' | 'approved' | 'rejected'
@@ -28,7 +31,7 @@ interface FoodSuggestion extends LocalFood {
 }
 
 interface Approval {
-  id: number
+  id: string
   status: Status
   statusLabel: string
   title: string
@@ -45,6 +48,8 @@ interface Approval {
   totalVotes: number
   tags: string[]
   emoji: string
+  createdAt: string
+  isDemo?: boolean
 }
 
 interface ApprovalForm {
@@ -58,7 +63,7 @@ interface ApprovalForm {
 }
 
 interface MyRecord {
-  id: number
+  id: string
   title: string
   time: string
   calorie: string
@@ -69,15 +74,16 @@ interface MyRecord {
 
 const labels: Record<Status, string> = { pending: '待审批', approved: '已通过', rejected: '先等等' }
 const localFoods = require('../../data/foods.js') as LocalFood[]
+const demoCreatedAt = new Date(0).toISOString()
 const seedApprovals: Approval[] = [
-  { id: 1, status: 'pending', statusLabel: '待审批', title: '芝士瀑布厚吐司', price: '28', calorie: '520', reason: '加班到现在，想用一口甜的给今天收尾。', alternative: '无糖酸奶 + 半根香蕉', intake: '鸡胸肉沙拉、黑咖啡', time: '12 分钟前', support: 24, against: 28, supportRate: 46, totalVotes: 52, tags: ['高糖', '夜宵'], emoji: '🍞' },
-  { id: 2, status: 'approved', statusLabel: '已通过', title: '冰美式 + 可颂', price: '32', calorie: '360', reason: '下午会议太密集，需要一点香气续命。', alternative: '黑咖啡 + 全麦面包', intake: '燕麦粥、煎蛋', time: '26 分钟前', support: 41, against: 18, supportRate: 70, totalVotes: 59, tags: ['下午茶', '碳水'], emoji: '🥐' },
-  { id: 3, status: 'rejected', statusLabel: '先等等', title: '大份麻辣拌', price: '39', calorie: '780', reason: '今天被工作气到了，想吃点重口的。', alternative: '番茄鸡蛋面 + 一份青菜', intake: '午餐吃得比较清淡', time: '41 分钟前', support: 17, against: 34, supportRate: 33, totalVotes: 51, tags: ['高油', '情绪进食'], emoji: '🥗' },
+  { id: 'demo-1', status: 'pending', statusLabel: '待审批', title: '芝士瀑布厚吐司', price: '28', calorie: '520', reason: '加班到现在，想用一口甜的给今天收尾。', alternative: '无糖酸奶 + 半根香蕉', intake: '鸡胸肉沙拉、黑咖啡', time: '示例内容', support: 24, against: 28, supportRate: 46, totalVotes: 52, tags: ['高糖', '夜宵'], emoji: '🍞', createdAt: demoCreatedAt, isDemo: true },
+  { id: 'demo-2', status: 'approved', statusLabel: '已通过', title: '冰美式 + 可颂', price: '32', calorie: '360', reason: '下午会议太密集，需要一点香气续命。', alternative: '黑咖啡 + 全麦面包', intake: '燕麦粥、煎蛋', time: '示例内容', support: 41, against: 18, supportRate: 70, totalVotes: 59, tags: ['下午茶', '碳水'], emoji: '🥐', createdAt: demoCreatedAt, isDemo: true },
+  { id: 'demo-3', status: 'rejected', statusLabel: '先等等', title: '大份麻辣拌', price: '39', calorie: '780', reason: '今天被工作气到了，想吃点重口的。', alternative: '番茄鸡蛋面 + 一份青菜', intake: '午餐吃得比较清淡', time: '示例内容', support: 17, against: 34, supportRate: 33, totalVotes: 51, tags: ['高油', '情绪进食'], emoji: '🥗', createdAt: demoCreatedAt, isDemo: true },
 ]
 const seedRecords: MyRecord[] = [
-  { id: 2, title: '冰美式 + 可颂', time: '今天 14:20', calorie: '360', status: 'approved', statusLabel: '已通过', checkinResult: '' },
-  { id: 3, title: '大份麻辣拌', time: '今天 12:05', calorie: '780', status: 'rejected', statusLabel: '先等等', checkinResult: '' },
-  { id: 100, title: '芝士瀑布厚吐司', time: '昨天 22:40', calorie: '520', status: 'approved', statusLabel: '已通过', checkinResult: '真香' },
+  { id: 'demo-2', title: '冰美式 + 可颂', time: '今天 14:20', calorie: '360', status: 'approved', statusLabel: '已通过', checkinResult: '' },
+  { id: 'demo-3', title: '大份麻辣拌', time: '今天 12:05', calorie: '780', status: 'rejected', statusLabel: '先等等', checkinResult: '' },
+  { id: 'demo-1', title: '芝士瀑布厚吐司', time: '昨天 22:40', calorie: '520', status: 'approved', statusLabel: '已通过', checkinResult: '真香' },
 ]
 
 const blankForm = (): ApprovalForm => ({ foodName: '', price: '', calorie: '', portion: '', reason: '', alternative: '', intake: '' })
@@ -134,8 +140,8 @@ function decodeShareSnapshot(encoded: string): Approval | null {
     let escaped = ''
     for (let index = 0; index < bytes.length; index += 1) escaped += `%${bytes[index].toString(16).padStart(2, '0')}`
     const value = JSON.parse(decodeURIComponent(escaped))
-    const id = Number(value && value.id)
-    if (!value || !Number.isSafeInteger(id) || id <= 0 || typeof value.title !== 'string') return null
+    const id = String(value && value.id || '')
+    if (!value || !/^[a-zA-Z0-9:_-]{1,128}$/.test(id) || typeof value.title !== 'string') return null
     if (!['pending', 'approved', 'rejected'].includes(value.status)) return null
     const status = value.status as Status
     const support = Math.max(0, Math.floor(Number(value.support) || 0))
@@ -157,6 +163,8 @@ function decodeShareSnapshot(encoded: string): Approval | null {
       totalVotes: support + against,
       tags: ['好友分享'],
       emoji: '🍽️',
+      createdAt: demoCreatedAt,
+      isDemo: id.startsWith('demo-'),
     }
   } catch (_error) {
     return null
@@ -179,12 +187,12 @@ Component({
     calorieSource: 'manual' as CalorieSource,
     uploadedImage: '',
     myRecords: seedRecords,
-    shareTargetId: 1,
+    shareTargetId: 'demo-1',
     shareAnchor: '',
     formFocusAnchor: '',
     keyboardHeight: 0,
     pageScrollStyle: '',
-    voteTargetId: 0,
+    voteTargetId: '',
     voteChoice: '' as VoteChoice | '',
     voteReason: '',
     todayCalories: 860,
@@ -209,6 +217,7 @@ Component({
         })
       }
       wx.onKeyboardHeightChange(keyboardHeightListener)
+      void this.loadApprovals()
     },
     detached() {
       if (!keyboardHeightListener) return
@@ -218,8 +227,9 @@ Component({
   },
   methods: {
     onLoad(query: any) {
-      const approvalId = Number(query && query.approvalId)
-      if (!Number.isFinite(approvalId)) return
+      void this.loadApprovals()
+      const approvalId = String(query && query.approvalId || '')
+      if (!approvalId) return
       let approvals = this.data.approvals as Approval[]
       const sharedSnapshot = query.snapshot ? decodeShareSnapshot(query.snapshot) : null
       if (sharedSnapshot && sharedSnapshot.id === approvalId && !approvals.some(item => item.id === approvalId)) {
@@ -230,6 +240,58 @@ Component({
         return
       }
       this.setData({ approvals, filteredApprovals: this.filterApprovals(approvals, 'all'), activeTab: 'square' as TabKey, activeFilter: 'all' as FilterKey, shareTargetId: approvalId, shareAnchor: `approval-${approvalId}` })
+    },
+    async loadApprovals() {
+      if (!isApiConfigured()) return
+      try {
+        const apiItems = await resolveApprovalImages(await fetchApprovals())
+        const current = this.data.approvals as Approval[]
+        const sharedSnapshots = current.filter(item => !item.isDemo && item.tags.includes('好友分享'))
+        const realApprovals = apiItems.map(item => this.mapApiApproval(item))
+        const realIds = new Set(realApprovals.map(item => item.id))
+        const merged = [
+          ...realApprovals,
+          ...sharedSnapshots.filter(item => !realIds.has(item.id)),
+          ...seedApprovals,
+        ].sort((left, right) => {
+          if (left.isDemo !== right.isDemo) return left.isDemo ? 1 : -1
+          return right.createdAt.localeCompare(left.createdAt)
+        })
+        this.setData({ approvals: merged, filteredApprovals: this.filterApprovals(merged, this.data.activeFilter as FilterKey) })
+      } catch (error) {
+        console.warn('load approvals failed', error)
+      }
+    },
+    mapApiApproval(item: ApiApproval): Approval {
+      const status = item.status
+      return {
+        id: item.id,
+        status,
+        statusLabel: labels[status],
+        title: item.title,
+        price: item.price === null || item.price === undefined ? '' : String(item.price),
+        calorie: item.calorie === null || item.calorie === undefined ? '待估算' : String(item.calorie),
+        reason: item.reason,
+        alternative: item.alternative || '',
+        intake: item.intake || '',
+        image: item.image || '',
+        time: this.relativeTime(item.createdAt),
+        createdAt: item.createdAt,
+        support: item.support,
+        against: item.against,
+        totalVotes: item.totalVotes,
+        supportRate: item.supportRate,
+        tags: item.tags || [],
+        emoji: item.emoji || '🍽️',
+      }
+    },
+    relativeTime(value: string) {
+      const minutes = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 60000))
+      if (minutes < 1) return '刚刚'
+      if (minutes < 60) return `${minutes} 分钟前`
+      const hours = Math.floor(minutes / 60)
+      if (hours < 24) return `${hours} 小时前`
+      return `${Math.floor(hours / 24)} 天前`
     },
     onShareAppMessage(options: any) {
       const buttonId = options && options.from === 'button' && options.target
@@ -406,13 +468,14 @@ Component({
     chooseImage() {
       wx.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'], success: res => this.setData({ uploadedImage: res.tempFilePaths[0] }) })
     },
-    submitApproval() {
+    async submitApproval() {
       const form = this.data.form as ApprovalForm
       const required: Array<[keyof ApprovalForm, string]> = [['foodName', '食物名称'], ['reason', '想吃理由']]
       const missing = required.find(([field]) => !form[field].trim())
       if (missing) { wx.showToast({ title: `请补充${missing[1]}`, icon: 'none' }); return }
       const price = form.price.trim()
       if (price && (!Number.isFinite(Number(price)) || Number(price) < 0)) { wx.showToast({ title: '请输入有效价格', icon: 'none' }); return }
+      await requestApprovalSubscription()
       const approval: Approval = {
         id: Date.now(), status: 'pending', statusLabel: '待审批', title: form.foodName.trim(), price: form.price.trim(),
         calorie: form.calorie.trim() || '待估算', reason: form.reason.trim(), alternative: form.alternative.trim(), intake: form.intake.trim(), image: this.data.uploadedImage as string, time: '刚刚',

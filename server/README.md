@@ -48,17 +48,18 @@ curl -H 'x-dev-openid: user-a' http://localhost:3000/health
 }
 ```
 
-CloudBase 云托管会把微信用户身份注入 `x-wx-openid`。生产建议设置 `REQUIRE_OPENID=true`，服务在没有身份时返回 401；本地开发使用 `x-dev-openid`。
+CloudBase 云托管会把微信用户身份注入 `x-wx-openid`。生产建议设置 `REQUIRE_OPENID=true`，服务在没有身份时返回 401；本地开发使用 `x-dev-openid`。内存仓储默认空库，广场演示数据由小程序本地展示，不会写入后端。
 
 ## CloudBase 部署
 
 1. 在 CloudBase 环境中创建数据库，并为 `approvals`、`approval_votes`、`user_records` 创建集合。
 2. 将 `server` 目录作为云托管服务目录，使用其中的 `Dockerfile` 构建，服务端口填 `3000`。
 3. 配置环境变量 `TCB_ENV_ID`、`NODE_ENV=production`、`REQUIRE_OPENID=true`。
-4. 为数据库建立以下索引：
+4. 如启用小程序订阅消息，再配置 `.env.example` 中的微信 AppID、AppSecret、模板 ID 和模板字段名；发起人须接受小程序中的一次性订阅授权。
+5. 为数据库建立以下索引：
    - `approvals`: `status + createdAt`
    - `approval_votes`: `_id`（投票唯一键，值为 `审批单ID:用户openid`）
    - `user_records`: `_openid + createdAt`、`approvalId + _openid`
-5. 将云托管服务域名配置到小程序合法域名，或使用 `wx.cloud.callContainer` 调用服务。
+6. 在 `miniprogram/config.ts` 填入 CloudBase 环境 ID 和云托管服务名，小程序通过 `wx.cloud.callContainer` 调用服务并使用微信用户身份。
 
 当前 MVP 只保存必要字段，图片字段保存小程序上传后的云文件 ID；支付、亲友群、内容审核和管理员能力留到后续版本。

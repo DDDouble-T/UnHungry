@@ -58,29 +58,11 @@ function calculateStats(records) {
 }
 
 class MemoryRepository {
-  constructor({ seed = true } = {}) {
+  constructor() {
     this.mode = 'memory'
     this.approvals = new Map()
     this.votes = new Map()
     this.records = new Map()
-    if (seed) this.seed()
-  }
-
-  seed() {
-    const user = 'demo-user'
-    const examples = [
-      { _id: 'demo-1', title: '芝士瀑布厚吐司', price: 28, calorie: 520, reason: '加班到现在，想用一口甜的给今天收尾。', alternative: '无糖酸奶 + 半根香蕉', intake: '鸡胸肉沙拉、黑咖啡', status: 'pending', support: 0, against: 0, tags: ['高糖', '夜宵'], emoji: '🍞' },
-      { _id: 'demo-2', title: '冰美式 + 可颂', price: 32, calorie: 360, reason: '下午会议太密集，需要一点香气续命。', alternative: '黑咖啡 + 全麦面包', intake: '燕麦粥、煎蛋', status: 'approved', support: 41, against: 18, tags: ['下午茶', '碳水'], emoji: '🥐' },
-      { _id: 'demo-3', title: '大份麻辣拌', price: 39, calorie: 780, reason: '今天被工作气到了，想吃点重口的。', alternative: '番茄鸡蛋面 + 一份青菜', intake: '午餐吃得比较清淡', status: 'rejected', support: 17, against: 34, tags: ['高油', '情绪进食'], emoji: '🥗' },
-    ]
-    examples.forEach((item, index) => {
-      const createdAt = new Date(Date.now() - (index + 1) * 60 * 1000).toISOString()
-      const counts = calculateStatus(item.support, item.against)
-      const approval = { ...item, ...counts, _openid: user, image: '', createdAt, updatedAt: createdAt }
-      this.approvals.set(approval._id, approval)
-      const record = recordFor(approval, user, createdAt)
-      this.records.set(record._id, record)
-    })
   }
 
   async listApprovals({ status = 'all', limit = 50 } = {}) {
