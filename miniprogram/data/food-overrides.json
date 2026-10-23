@@ -1,0 +1,242 @@
+[
+  {
+    "id": "bubble-tea",
+    "name": "珍珠奶茶",
+    "aliases": ["奶茶", "波霸奶茶"],
+    "calorieRange": [400, 700],
+    "defaultPortion": "中杯",
+    "portions": [
+      { "label": "小杯", "calorie": 400 },
+      { "label": "中杯", "calorie": 520 },
+      { "label": "大杯", "calorie": 700 }
+    ]
+  },
+  {
+    "id": "americano",
+    "name": "冰美式",
+    "aliases": ["美式咖啡", "黑咖啡"],
+    "calorieRange": [5, 30],
+    "defaultPortion": "中杯",
+    "portions": [
+      { "label": "小杯", "calorie": 5 },
+      { "label": "中杯", "calorie": 15 },
+      { "label": "大杯", "calorie": 30 }
+    ]
+  },
+  {
+    "id": "latte",
+    "name": "拿铁",
+    "aliases": ["咖啡拿铁", "牛奶咖啡"],
+    "calorieRange": [150, 320],
+    "defaultPortion": "中杯",
+    "portions": [
+      { "label": "小杯", "calorie": 150 },
+      { "label": "中杯", "calorie": 220 },
+      { "label": "大杯", "calorie": 320 }
+    ]
+  },
+  {
+    "id": "croissant",
+    "name": "可颂",
+    "aliases": ["牛角包", "羊角面包"],
+    "calorieRange": [180, 640],
+    "defaultPortion": "一个",
+    "portions": [
+      { "label": "半个", "calorie": 180 },
+      { "label": "一个", "calorie": 320 },
+      { "label": "两个", "calorie": 640 }
+    ]
+  },
+  {
+    "id": "burger",
+    "name": "汉堡",
+    "aliases": ["牛肉汉堡", "鸡腿堡"],
+    "calorieRange": [280, 1300],
+    "defaultPortion": "一个",
+    "portions": [
+      { "label": "半个", "calorie": 280 },
+      { "label": "一个", "calorie": 650 },
+      { "label": "两个", "calorie": 1300 }
+    ]
+  },
+  {
+    "id": "fried-chicken",
+    "name": "炸鸡",
+    "aliases": ["炸鸡块", "鸡米花"],
+    "calorieRange": [450, 1000],
+    "defaultPortion": "一份",
+    "portions": [
+      { "label": "小份", "calorie": 450 },
+      { "label": "一份", "calorie": 700 },
+      { "label": "大份", "calorie": 1000 }
+    ]
+  },
+  {
+    "id": "fries",
+    "name": "薯条",
+    "aliases": ["炸薯条"],
+    "calorieRange": [230, 650],
+    "defaultPortion": "中份",
+    "portions": [
+      { "label": "小份", "calorie": 230 },
+      { "label": "中份", "calorie": 380 },
+      { "label": "大份", "calorie": 650 }
+    ]
+  },
+  {
+    "id": "chicken-rice",
+    "name": "鸡排饭",
+    "aliases": ["鸡排盖饭", "鸡排套餐"],
+    "calorieRange": [500, 1000],
+    "defaultPortion": "一份",
+    "portions": [
+      { "label": "半份", "calorie": 500 },
+      { "label": "一份", "calorie": 780 },
+      { "label": "加饭一份", "calorie": 1000 }
+    ]
+  },
+  {
+    "id": "beef-rice",
+    "name": "牛肉盖饭",
+    "aliases": ["牛肉饭", "牛肉拌饭"],
+    "calorieRange": [420, 950],
+    "defaultPortion": "一份",
+    "portions": [
+      { "label": "半份", "calorie": 420 },
+      { "label": "一份", "calorie": 720 },
+      { "label": "加饭一份", "calorie": 950 }
+    ]
+  },
+  {
+    "id": "fried-rice",
+    "name": "炒饭",
+    "aliases": ["蛋炒饭", "扬州炒饭"],
+    "calorieRange": [350, 850],
+    "defaultPortion": "一份",
+    "portions": [
+      { "label": "半份", "calorie": 350 },
+      { "label": "一份", "calorie": 650 },
+      { "label": "大份", "calorie": 850 }
+    ]
+  },
+  {
+    "id": "noodles",
+    "name": "炒面",
+    "aliases": ["炒乌冬", "炒方便面"],
+    "calorieRange": [380, 900],
+    "defaultPortion": "一份",
+    "portions": [
+      { "label": "半份", "calorie": 380 },
+      { "label": "一份", "calorie": 680 },
+      { "label": "大份", "calorie": 900 }
+    ]
+  },
+  {
+    "id": "rice-noodle",
+    "name": "螺蛳粉",
+    "aliases": ["螺丝粉"],
+    "calorieRange": [550, 950],
+    "defaultPortion": "一份",
+    "portions": [
+      { "label": "少粉", "calorie": 550 },
+      { "label": "一份", "calorie": 750 },
+      { "label": "加粉加料", "calorie": 950 }
+    ]
+  },
+  {
+    "id": "malatang",
+    "name": "麻辣烫",
+    "aliases": ["麻辣拌", "冒菜"],
+    "calorieRange": [450, 1000],
+    "defaultPortion": "普通一碗",
+    "portions": [
+      { "label": "清淡一碗", "calorie": 450 },
+      { "label": "普通一碗", "calorie": 700 },
+      { "label": "加粉加肉一碗", "calorie": 1000 }
+    ]
+  },
+  {
+    "id": "hot-pot",
+    "name": "火锅",
+    "aliases": ["麻辣火锅", "自助火锅"],
+    "calorieRange": [700, 1500],
+    "defaultPortion": "普通一人份",
+    "portions": [
+      { "label": "清汤一人份", "calorie": 700 },
+      { "label": "普通一人份", "calorie": 1000 },
+      { "label": "麻辣锅一人份", "calorie": 1500 }
+    ]
+  },
+  {
+    "id": "dumplings",
+    "name": "饺子",
+    "aliases": ["水饺", "煎饺"],
+    "calorieRange": [350, 800],
+    "defaultPortion": "十个",
+    "portions": [
+      { "label": "五个", "calorie": 350 },
+      { "label": "十个", "calorie": 650 },
+      { "label": "十五个", "calorie": 800 }
+    ]
+  },
+  {
+    "id": "salad",
+    "name": "鸡胸肉沙拉",
+    "aliases": ["沙拉", "蔬菜沙拉"],
+    "calorieRange": [250, 600],
+    "defaultPortion": "普通一份",
+    "portions": [
+      { "label": "少酱一份", "calorie": 250 },
+      { "label": "普通一份", "calorie": 420 },
+      { "label": "加芝士一份", "calorie": 600 }
+    ]
+  },
+  {
+    "id": "cake",
+    "name": "蛋糕",
+    "aliases": ["奶油蛋糕", "芝士蛋糕"],
+    "calorieRange": [180, 650],
+    "defaultPortion": "一块",
+    "portions": [
+      { "label": "半块", "calorie": 180 },
+      { "label": "一块", "calorie": 420 },
+      { "label": "两块", "calorie": 650 }
+    ]
+  },
+  {
+    "id": "banana",
+    "name": "香蕉",
+    "aliases": ["香蕉一根"],
+    "calorieRange": [45, 240],
+    "defaultPortion": "一根",
+    "portions": [
+      { "label": "半根", "calorie": 45 },
+      { "label": "一根", "calorie": 120 },
+      { "label": "两根", "calorie": 240 }
+    ]
+  },
+  {
+    "id": "apple",
+    "name": "苹果",
+    "aliases": ["苹果一个"],
+    "calorieRange": [45, 220],
+    "defaultPortion": "一个",
+    "portions": [
+      { "label": "半个", "calorie": 45 },
+      { "label": "一个", "calorie": 110 },
+      { "label": "两个", "calorie": 220 }
+    ]
+  },
+  {
+    "id": "jianbing",
+    "name": "煎饼果子",
+    "aliases": ["煎饼", "杂粮煎饼"],
+    "calorieRange": [450, 800],
+    "defaultPortion": "普通一个",
+    "portions": [
+      { "label": "少酱一个", "calorie": 450 },
+      { "label": "普通一个", "calorie": 620 },
+      { "label": "加肠一个", "calorie": 800 }
+    ]
+  }
+]

@@ -34,6 +34,19 @@ test('health exposes service and storage mode', async () => {
   assert.equal(body.data.database, 'memory')
 })
 
+test('API metadata lists all business routes', async () => {
+  const { response, body } = await request('/api/v1')
+  assert.equal(response.status, 200)
+  assert.deepEqual(body.data.endpoints, [
+    '/api/v1/approvals',
+    '/api/v1/approvals/:approvalId',
+    '/api/v1/approvals/:approvalId/votes',
+    '/api/v1/me/records',
+    '/api/v1/me/records/:approvalId/checkin',
+    '/api/v1/me/stats',
+  ])
+})
+
 test('approval flow creates a record, closes after vote and supports check-in', async () => {
   const owner = { 'x-dev-openid': 'owner-1' }
   const voter = { 'x-dev-openid': 'voter-1' }

@@ -13,6 +13,7 @@ function newId() {
 }
 
 function calculateStatus(support, against) {
+  // 状态由服务端统一计算，客户端只提交 choice，避免不同客户端出现审批结果分叉。
   const totalVotes = support + against
   const supportRate = totalVotes ? Math.round((support / totalVotes) * 100) : 0
   const status = supportRate >= 50 ? 'approved' : against > support ? 'rejected' : 'pending'
@@ -112,6 +113,7 @@ class MemoryRepository {
       updatedAt: createdAt,
     }
     this.approvals.set(approval._id, approval)
+    // 审批单创建时建立个人记录，保证“我的”页面能追踪这张审批单的后续状态。
     const record = recordFor(approval, openid, createdAt)
     this.records.set(record._id, record)
     return approval
@@ -119,6 +121,7 @@ class MemoryRepository {
 
   async createVote(approvalId, input, openid) {
     const approval = await this.getApproval(approvalId)
+    // 复合键同时承担幂等约束：同一用户对同一审批单只能产生一票。
     const voteId = `${approvalId}:${openid}`
     if (this.votes.has(voteId)) throw conflict('DUPLICATE_VOTE', '你已经投过这张审批单')
     if (approval.status !== 'pending') throw conflict('APPROVAL_CLOSED', '这张审批单已经完成审批')

@@ -1,8 +1,31 @@
-type TabKey = 'square' | 'apply' | 'me'
+type TabKey = 'square' | 'apply' | 'record' | 'me'
 type FilterKey = 'all' | 'pending' | 'approved' | 'rejected'
 type Status = 'pending' | 'approved' | 'rejected'
+type RecordStatus = Status | 'logged'
 type VoteChoice = 'approve' | 'wait'
 type FormField = 'foodName' | 'price' | 'calorie' | 'reason' | 'alternative' | 'intake'
+type CalorieSource = 'manual' | 'local'
+
+interface FoodPortion {
+  label: string
+  calorie: number
+}
+
+interface LocalFood {
+  id: string
+  name: string
+  aliases: string[]
+  calorieRange: [number, number]
+  defaultPortion: string
+  portions: FoodPortion[]
+  per100g?: number
+  source?: string
+  category?: string
+}
+
+interface FoodSuggestion extends LocalFood {
+  rangeLabel: string
+}
 
 interface Approval {
   id: number
@@ -28,6 +51,7 @@ interface ApprovalForm {
   foodName: string
   price: string
   calorie: string
+  portion: string
   reason: string
   alternative: string
   intake: string
@@ -38,12 +62,13 @@ interface MyRecord {
   title: string
   time: string
   calorie: string
-  status: Status
+  status: RecordStatus
   statusLabel: string
   checkinResult: string
 }
 
 const labels: Record<Status, string> = { pending: '待审批', approved: '已通过', rejected: '先等等' }
+const localFoods = require('../../data/foods.js') as LocalFood[]
 const seedApprovals: Approval[] = [
   { id: 1, status: 'pending', statusLabel: '待审批', title: '芝士瀑布厚吐司', price: '28', calorie: '520', reason: '加班到现在，想用一口甜的给今天收尾。', alternative: '无糖酸奶 + 半根香蕉', intake: '鸡胸肉沙拉、黑咖啡', time: '12 分钟前', support: 24, against: 28, supportRate: 46, totalVotes: 52, tags: ['高糖', '夜宵'], emoji: '🍞' },
   { id: 2, status: 'approved', statusLabel: '已通过', title: '冰美式 + 可颂', price: '32', calorie: '360', reason: '下午会议太密集，需要一点香气续命。', alternative: '黑咖啡 + 全麦面包', intake: '燕麦粥、煎蛋', time: '26 分钟前', support: 41, against: 18, supportRate: 70, totalVotes: 59, tags: ['下午茶', '碳水'], emoji: '🥐' },
@@ -55,8 +80,30 @@ const seedRecords: MyRecord[] = [
   { id: 100, title: '芝士瀑布厚吐司', time: '昨天 22:40', calorie: '520', status: 'approved', statusLabel: '已通过', checkinResult: '真香' },
 ]
 
-const blankForm = (): ApprovalForm => ({ foodName: '', price: '', calorie: '', reason: '', alternative: '', intake: '' })
+const blankForm = (): ApprovalForm => ({ foodName: '', price: '', calorie: '', portion: '', reason: '', alternative: '', intake: '' })
 let keyboardHeightListener: ((result: { height: number }) => void) | null = null
+
+function normalizeFoodKeyword(value: string) {
+  return value.trim().toLowerCase().replace(/[\s·＋+、,，。/\\_-]/g, '')
+}
+
+function keywordFragments(value: string) {
+  const normalized = normalizeFoodKeyword(value)
+  const fragments = [normalized]
+  for (let index = 0; index < normalized.length - 1; index += 1) {
+    fragments.push(normalized.slice(index, index + 2))
+  }
+  return [...new Set(fragments.filter(Boolean))]
+}
+
+function foodMatchScore(query: string, candidate: string): number | null {
+  if (candidate === query) return 0
+  if (candidate.includes(query) || query.includes(candidate)) return 1
+  const queryFragments = keywordFragments(query).slice(1)
+  const candidateFragments = new Set(keywordFragments(candidate).slice(1))
+  const overlap = queryFragments.filter(fragment => candidateFragments.has(fragment)).length
+  return overlap ? 2 - Math.min(overlap / Math.max(queryFragments.length, 1), 0.9) : null
+}
 
 function encodeShareSnapshot(approval: Approval) {
   const snapshot = JSON.stringify({
@@ -123,6 +170,13 @@ Component({
     approvals: seedApprovals,
     filteredApprovals: seedApprovals,
     form: blankForm(),
+    foodSuggestions: [] as FoodSuggestion[],
+    foodMatchHint: '',
+    selectedFoodId: '',
+    portionOptions: [] as string[],
+    portionIndex: 0,
+    calorieHint: '',
+    calorieSource: 'manual' as CalorieSource,
     uploadedImage: '',
     myRecords: seedRecords,
     shareTargetId: 1,
@@ -145,7 +199,7 @@ Component({
   lifetimes: {
     attached() {
       keyboardHeightListener = ({ height }) => {
-        const keyboardHeight = this.data.activeTab === 'apply' ? Math.max(0, height) : 0
+        const keyboardHeight = this.data.activeTab === 'apply' || this.data.activeTab === 'record' ? Math.max(0, height) : 0
         if (keyboardHeight === this.data.keyboardHeight) return
         this.setData({
           keyboardHeight,
@@ -204,10 +258,14 @@ Component({
       this.setData({
         activeTab,
         formFocusAnchor: '',
-        ...(activeTab === 'apply' ? {} : { keyboardHeight: 0, pageScrollStyle: '' }),
+        ...(activeTab === 'apply' || activeTab === 'record' ? {} : { keyboardHeight: 0, pageScrollStyle: '' }),
       })
     },
-    startApply() { this.setData({ activeTab: 'apply' as TabKey, formFocusAnchor: '' }) },
+    startApply() { this.setData({ activeTab: 'apply' as TabKey, formFocusAnchor: 'form-field-foodName' }) },
+    startRecord() {
+      this.resetForm()
+      this.setData({ activeTab: 'record' as TabKey, formFocusAnchor: 'form-field-foodName' })
+    },
     openFriends() { wx.showToast({ title: '亲友群审批即将开放', icon: 'none' }) },
     prepareTimelineShare(e: any) {
       const id = Number(e.currentTarget.dataset.id)
@@ -266,7 +324,80 @@ Component({
     },
     onFormInput(e: any) {
       const field = e.currentTarget.dataset.field as FormField
-      this.setData({ [`form.${field}`]: e.detail.value })
+      const value = String(e.detail.value || '')
+      if (field === 'foodName') {
+        const selectedFoodId = this.data.selectedFoodId as string
+        const selectedFood = localFoods.find(item => item.id === selectedFoodId)
+        const keepSelection = Boolean(selectedFood && normalizeFoodKeyword(value) === normalizeFoodKeyword(selectedFood.name))
+        const foodSuggestions = this.findLocalFoods(value)
+        const updates: Record<string, unknown> = {
+          [`form.${field}`]: value,
+          foodSuggestions,
+          foodMatchHint: value.trim() && !foodSuggestions.length ? '未找到本地食物，请手动填写热量' : '',
+        }
+        if (!keepSelection && selectedFoodId) {
+          updates.selectedFoodId = ''
+          updates.portionOptions = []
+          updates.portionIndex = 0
+          updates.calorieHint = ''
+          updates.calorieSource = 'manual'
+          updates['form.calorie'] = ''
+          updates['form.portion'] = ''
+        }
+        this.setData(updates)
+        return
+      }
+      this.setData({ [`form.${field}`]: value, ...(field === 'calorie' ? { calorieSource: 'manual' as CalorieSource } : {}) })
+    },
+    findLocalFoods(keyword: string): FoodSuggestion[] {
+      const query = normalizeFoodKeyword(keyword)
+      if (!query) return []
+      return localFoods
+        .map(food => {
+          const names = [food.name, ...food.aliases].map(normalizeFoodKeyword)
+          const scores = names.map(name => foodMatchScore(query, name)).filter((score): score is number => score !== null)
+          const score = scores.length ? Math.min(...scores) : null
+          return {
+            ...food,
+            rangeLabel: `${food.calorieRange[0]}-${food.calorieRange[1]} kcal`,
+            score,
+          }
+        })
+        .filter(item => item.score !== null)
+        .sort((left, right) => (left.score as number) - (right.score as number))
+        .slice(0, 5)
+        .map(({ score: _score, ...food }) => food)
+    },
+    selectLocalFood(e: any) {
+      const foodId = String(e.currentTarget.dataset.id || '')
+      const food = localFoods.find(item => item.id === foodId)
+      if (!food) return
+      const defaultIndex = Math.max(0, food.portions.findIndex(item => item.label === food.defaultPortion))
+      const portion = food.portions[defaultIndex]
+      this.setData({
+        'form.foodName': food.name,
+        'form.calorie': String(portion.calorie),
+        'form.portion': portion.label,
+        foodSuggestions: [],
+        foodMatchHint: '',
+        selectedFoodId: food.id,
+        portionOptions: food.portions.map(item => `${item.label} · ${item.calorie} kcal`),
+        portionIndex: defaultIndex,
+        calorieHint: `本地参考范围：${food.calorieRange[0]}-${food.calorieRange[1]} kcal`,
+        calorieSource: 'local' as CalorieSource,
+      })
+    },
+    onPortionChange(e: any) {
+      const food = localFoods.find(item => item.id === this.data.selectedFoodId)
+      const portionIndex = Number(e.detail.value)
+      const portion = food && food.portions[portionIndex]
+      if (!food || !portion) return
+      this.setData({
+        'form.portion': portion.label,
+        'form.calorie': String(portion.calorie),
+        portionIndex,
+        calorieSource: 'local' as CalorieSource,
+      })
     },
     onFormFocus(e: any) {
       const field = e.currentTarget.dataset.field as FormField
@@ -290,10 +421,27 @@ Component({
       const approvals = [approval, ...(this.data.approvals as Approval[])]
       const record: MyRecord = { id: approval.id, title: approval.title, time: '刚刚', calorie: approval.calorie, status: approval.status, statusLabel: approval.statusLabel, checkinResult: '' }
       const submittedCount = (this.data.submittedCount as number) + 1
-      this.setData({ approvals, filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey), myRecords: [record, ...(this.data.myRecords as MyRecord[])], form: blankForm(), uploadedImage: '', submittedCount, approvalRate: Math.round((this.data.approvedCount as number) / submittedCount * 100), activeTab: 'square' as TabKey, formFocusAnchor: '', keyboardHeight: 0, pageScrollStyle: '' })
+      const myRecords = [record, ...(this.data.myRecords as MyRecord[])]
+      this.setData({ approvals, filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey), myRecords, form: blankForm(), uploadedImage: '', foodSuggestions: [], foodMatchHint: '', selectedFoodId: '', portionOptions: [], portionIndex: 0, calorieHint: '', calorieSource: 'manual' as CalorieSource, submittedCount, approvalRate: Math.round((this.data.approvedCount as number) / submittedCount * 100), activeTab: 'square' as TabKey, formFocusAnchor: '', keyboardHeight: 0, pageScrollStyle: '' })
       wx.showToast({ title: '审批单已发出', icon: 'success' })
     },
-    resetForm() { this.setData({ form: blankForm(), uploadedImage: '' }) },
+    resetForm() {
+      this.setData({ form: blankForm(), uploadedImage: '', foodSuggestions: [], foodMatchHint: '', selectedFoodId: '', portionOptions: [], portionIndex: 0, calorieHint: '', calorieSource: 'manual' as CalorieSource })
+    },
+    saveFoodRecord() {
+      const form = this.data.form as ApprovalForm
+      const foodName = form.foodName.trim()
+      if (!foodName) { wx.showToast({ title: '请填写食物名称', icon: 'none' }); return }
+      const calorie = form.calorie.trim()
+      if (calorie && (!Number.isFinite(Number(calorie)) || Number(calorie) < 0)) { wx.showToast({ title: '请输入有效热量', icon: 'none' }); return }
+      const record: MyRecord = { id: Date.now(), title: foodName, time: '刚刚', calorie: calorie || '待估算', status: 'logged', statusLabel: '已记录', checkinResult: '' }
+      const myRecords = [record, ...(this.data.myRecords as MyRecord[])]
+      const addedCalories = calorie ? Number(calorie) : 0
+      const todayCalories = (this.data.todayCalories as number) + addedCalories
+      const calorieQuota = this.data.calorieQuota as number
+      this.setData({ myRecords, form: blankForm(), uploadedImage: '', foodSuggestions: [], foodMatchHint: '', selectedFoodId: '', portionOptions: [], portionIndex: 0, calorieHint: '', calorieSource: 'manual' as CalorieSource, activeTab: 'me' as TabKey, formFocusAnchor: '', keyboardHeight: 0, pageScrollStyle: '', todayCalories, quotaPercent: Math.min(100, Math.round(todayCalories / calorieQuota * 100)) })
+      wx.showToast({ title: '已添加到今日记录', icon: 'success' })
+    },
     checkIn(e: any) {
       const result = e.currentTarget.dataset.result as string
       const id = Number(e.currentTarget.dataset.id)

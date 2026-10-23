@@ -19,6 +19,8 @@ curl -H 'x-dev-openid: user-a' http://localhost:3000/health
 
 ## API
 
+完整字段、校验规则、状态计算、错误码和“后端控制范围”见 [API.md](./API.md)。
+
 所有业务响应使用 `{ "data": ... }`，失败响应使用 `{ "error": { "code": ..., "message": ... } }`。
 
 | 方法 | 路径 | 作用 |

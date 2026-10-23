@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-23",
+  "catalog": {
+    "entries": 2043,
+    "cfct": 1694,
+    "usdaFoundation": 329,
+    "curated": 20
+  },
+  "sources": [
+    {
+      "id": "cfct-2026",
+      "name": "中国食物成分表（公开整理版）",
+      "url": "https://github.com/ruffood/cn-food-mcp/blob/main/data2026.csv",
+      "license": "MIT（以上游仓库 README 声明为准）",
+      "unit": "每100克"
+    },
+    {
+      "id": "usda-foundation-2026-04-30",
+      "name": "USDA FoodData Central Foundation Foods",
+      "url": "https://fdc.nal.usda.gov/download-datasets.html",
+      "license": "USDA open data",
+      "unit": "每100克"
+    },
+    {
+      "id": "open-food-facts",
+      "name": "Open Food Facts",
+      "url": "https://world.openfoodfacts.org/data",
+      "license": "ODbL 1.0",
+      "status": "optional-import",
+      "note": "商品条码数据量大且有数据库署名/同许可要求，暂不直接打包进小程序；可通过构建脚本导入服务端或独立离线库。"
+    }
+  ]
+}

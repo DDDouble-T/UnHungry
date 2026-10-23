@@ -40,8 +40,20 @@ function createApp({ repository = createRepository() } = {}) {
   app.use(express.json({ limit: process.env.BODY_LIMIT || '64kb' }))
 
   app.get('/health', (request, response) => response.json({ data: { status: 'ok', service: 'unhungry-api', database: repository.mode, timestamp: new Date().toISOString() } }))
-  app.get('/api/v1', (request, response) => response.json({ data: { name: 'unhungry-api', version: 'v1', endpoints: ['/api/v1/approvals', '/api/v1/me/records', '/api/v1/me/stats'] } }))
+  app.get('/api/v1', (request, response) => response.json({ data: {
+    name: 'unhungry-api',
+    version: 'v1',
+    endpoints: [
+      '/api/v1/approvals',
+      '/api/v1/approvals/:approvalId',
+      '/api/v1/approvals/:approvalId/votes',
+      '/api/v1/me/records',
+      '/api/v1/me/records/:approvalId/checkin',
+      '/api/v1/me/stats',
+    ],
+  } }))
 
+  // 审批广场只读公开审批单；status 和 limit 在 validation 层统一限制，避免把查询条件直接交给数据库。
   app.get('/api/v1/approvals', asyncRoute(async (request, response) => {
     const items = await repository.listApprovals({ status: status(request.query.status), limit: limit(request.query.limit) })
     response.json({ data: items.map(approval) })
@@ -52,11 +64,13 @@ function createApp({ repository = createRepository() } = {}) {
     response.json({ data: approval(item) })
   }))
 
+  // 创建审批单会同时生成发起人的个人记录，后续投票状态变化由 repository 同步到该记录。
   app.post('/api/v1/approvals', asyncRoute(async (request, response) => {
     const item = await repository.createApproval(validateApprovalInput(request.body), openidFrom(request))
     response.status(201).json({ data: approval(item) })
   }))
 
+  // 投票的去重、审批关闭判断和状态计算属于后端规则，不应由前端本地计算后直接覆盖结果。
   app.post('/api/v1/approvals/:approvalId/votes', asyncRoute(async (request, response) => {
     const item = await repository.createVote(id(request.params.approvalId, 'approvalId'), validateVoteInput(request.body), openidFrom(request))
     response.status(201).json({ data: approval(item) })
@@ -71,6 +85,7 @@ function createApp({ repository = createRepository() } = {}) {
     response.json({ data: stats(await repository.getStats(openidFrom(request))) })
   }))
 
+  // 打卡必须绑定当前用户自己的记录，并由 repository 校验审批已通过。
   app.post('/api/v1/me/records/:approvalId/checkin', asyncRoute(async (request, response) => {
     const item = await repository.checkIn(id(request.params.approvalId, 'approvalId'), validateCheckinInput(request.body).result, openidFrom(request))
     response.json({ data: record(item) })
