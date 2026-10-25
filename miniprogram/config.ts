@@ -2,8 +2,8 @@
 export const APPROVAL_SUBSCRIBE_TEMPLATE_ID = ''
 
 // 填入 CloudBase 环境 ID 和云托管服务名后，广场读写会切换到真实后端。
-export const CLOUDBASE_ENV_ID = ''
-export const CLOUD_SERVICE_NAME = ''
+export const CLOUDBASE_ENV_ID = 'prod-d5glohzgw33534efd'
+export const CLOUD_SERVICE_NAME = 'express-ed7s'
 
 export function requestApprovalSubscription(): Promise<boolean> {
   if (!APPROVAL_SUBSCRIBE_TEMPLATE_ID) return Promise.resolve(false)

@@ -6,6 +6,7 @@ const { HttpError, notFound, unauthorized } = require('./errors')
 const { approval, record, stats } = require('./serializers')
 const {
   validateApprovalInput,
+  validateFoodRecordInput,
   validateVoteInput,
   validateCheckinInput,
   status,
@@ -46,6 +47,7 @@ function createApp({ repository = createRepository(), notifier = createNotifier(
     version: 'v1',
     endpoints: [
       '/api/v1/approvals',
+      '/api/v1/foods',
       '/api/v1/approvals/:approvalId',
       '/api/v1/approvals/:approvalId/votes',
       '/api/v1/me/records',
@@ -63,6 +65,14 @@ function createApp({ repository = createRepository(), notifier = createNotifier(
   app.get('/api/v1/approvals/:approvalId', asyncRoute(async (request, response) => {
     const item = await repository.getApproval(id(request.params.approvalId, 'approvalId'))
     response.json({ data: approval(item) })
+  }))
+
+  app.get('/api/v1/foods', asyncRoute(async (request, response) => {
+    const keyword = typeof request.query.keyword === 'string' ? request.query.keyword.trim().slice(0, 40) : ''
+    const items = typeof repository.listFoods === 'function'
+      ? await repository.listFoods({ keyword, limit: Math.min(20, limit(request.query.limit)) })
+      : []
+    response.json({ data: items })
   }))
 
   // 创建审批单会同时生成发起人的个人记录，后续投票状态变化由 repository 同步到该记录。
@@ -90,6 +100,11 @@ function createApp({ repository = createRepository(), notifier = createNotifier(
   app.get('/api/v1/me/records', asyncRoute(async (request, response) => {
     const items = await repository.listRecords(openidFrom(request))
     response.json({ data: items.map(record) })
+  }))
+
+  app.post('/api/v1/me/records', asyncRoute(async (request, response) => {
+    const item = await repository.createFoodRecord(validateFoodRecordInput(request.body), openidFrom(request))
+    response.status(201).json({ data: record(item) })
   }))
 
   app.get('/api/v1/me/stats', asyncRoute(async (request, response) => {

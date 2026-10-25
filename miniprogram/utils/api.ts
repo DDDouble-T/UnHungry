@@ -19,6 +19,39 @@ export interface ApiApproval {
   emoji: string
 }
 
+export interface ApiFood {
+  id: string
+  name: string
+  aliases: string[]
+  calorieRange: [number, number]
+  defaultPortion: string
+  portions: Array<{ label: string; calorie: number }>
+  per100g?: number
+  source?: string
+  category?: string
+}
+
+export interface ApiRecord {
+  id: string
+  recordId?: string
+  title: string
+  time: string
+  calorie: number | null
+  status: 'pending' | 'approved' | 'rejected' | 'logged'
+  statusLabel: string
+  checkinResult: string
+}
+
+export interface ApiStats {
+  submittedCount: number
+  approvedCount: number
+  approvalRate: number
+  todayCalories: number
+  calorieQuota: number
+  savedCalories: number
+  topRejected: string
+}
+
 interface ApiResponse<T> {
   data?: T
   error?: { message?: string }
@@ -70,6 +103,14 @@ export function fetchApprovals() {
   return request<ApiApproval[]>('/api/v1/approvals?status=all&limit=100')
 }
 
+export function fetchApproval(approvalId: string) {
+  return request<ApiApproval>(`/api/v1/approvals/${encodeURIComponent(approvalId)}`)
+}
+
+export function fetchFoods(keyword: string) {
+  return request<ApiFood[]>(`/api/v1/foods?keyword=${encodeURIComponent(keyword)}&limit=5`)
+}
+
 export function createApproval(input: {
   title: string
   price?: number
@@ -84,6 +125,22 @@ export function createApproval(input: {
 
 export function createApprovalVote(approvalId: string, input: { choice: 'approve' | 'wait'; reason: string }) {
   return request<ApiApproval>(`/api/v1/approvals/${encodeURIComponent(approvalId)}/votes`, 'POST', input)
+}
+
+export function fetchRecords() {
+  return request<ApiRecord[]>('/api/v1/me/records')
+}
+
+export function fetchStats() {
+  return request<ApiStats>('/api/v1/me/stats')
+}
+
+export function createFoodRecord(input: { title: string; calorie?: number; image?: string }) {
+  return request<ApiRecord>('/api/v1/me/records', 'POST', input)
+}
+
+export function checkIn(approvalId: string, result: '真香' | '后悔') {
+  return request<ApiRecord>(`/api/v1/me/records/${encodeURIComponent(approvalId)}/checkin`, 'POST', { result })
 }
 
 export async function uploadApprovalImage(filePath: string) {

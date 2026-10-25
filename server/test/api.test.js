@@ -55,6 +55,7 @@ test('API metadata lists all business routes', async () => {
   assert.equal(response.status, 200)
   assert.deepEqual(body.data.endpoints, [
     '/api/v1/approvals',
+    '/api/v1/foods',
     '/api/v1/approvals/:approvalId',
     '/api/v1/approvals/:approvalId/votes',
     '/api/v1/me/records',
@@ -112,6 +113,30 @@ test('approval flow creates a record, closes after vote and supports check-in', 
   })
   assert.equal(checkin.response.status, 200)
   assert.equal(checkin.body.data.checkinResult, '真香')
+})
+
+test('food search and independent food records are served by the backend', async () => {
+  const foods = await request('/api/v1/foods?keyword=%E9%B8%A1%E8%9B%8B&limit=5')
+  assert.equal(foods.response.status, 200)
+  assert.ok(foods.body.data.length > 0)
+  assert.ok(foods.body.data.some(item => item.name.includes('鸡蛋')))
+
+  const owner = { 'x-dev-openid': 'food-log-owner' }
+  const created = await request('/api/v1/me/records', {
+    method: 'POST',
+    headers: owner,
+    body: JSON.stringify({ title: '米饭', calorie: 230 }),
+  })
+  assert.equal(created.response.status, 201)
+  assert.equal(created.body.data.status, 'logged')
+  assert.equal(created.body.data.title, '米饭')
+
+  const listed = await request('/api/v1/me/records', { headers: owner })
+  assert.equal(listed.body.data.length, 1)
+  assert.equal(listed.body.data[0].id, created.body.data.id)
+  const stats = await request('/api/v1/me/stats', { headers: owner })
+  assert.equal(stats.body.data.todayCalories, 230)
+  assert.equal(stats.body.data.submittedCount, 0)
 })
 
 test('a failed subscription message does not turn a committed vote into an API failure', async () => {

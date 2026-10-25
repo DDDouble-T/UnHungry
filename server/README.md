@@ -27,10 +27,12 @@ curl -H 'x-dev-openid: user-a' http://localhost:3000/health
 | --- | --- | --- |
 | `GET` | `/health` | 容器健康检查 |
 | `GET` | `/api/v1/approvals?status=all\|pending\|approved\|rejected` | 审批广场 |
+| `GET` | `/api/v1/foods?keyword=鸡蛋` | 食物热量检索 |
 | `GET` | `/api/v1/approvals/:approvalId` | 查看审批单 |
 | `POST` | `/api/v1/approvals` | 创建审批单 |
 | `POST` | `/api/v1/approvals/:approvalId/votes` | 投票，`choice` 为 `approve` 或 `wait` |
-| `GET` | `/api/v1/me/records` | 当前用户的审批记录 |
+| `GET` | `/api/v1/me/records` | 当前用户的饮食记录 |
+| `POST` | `/api/v1/me/records` | 新增独立饮食记录 |
 | `GET` | `/api/v1/me/stats` | 当前用户统计 |
 | `POST` | `/api/v1/me/records/:approvalId/checkin` | 审批通过后打卡，`result` 为 `真香` 或 `后悔` |
 
@@ -48,7 +50,7 @@ curl -H 'x-dev-openid: user-a' http://localhost:3000/health
 }
 ```
 
-CloudBase 云托管会把微信用户身份注入 `x-wx-openid`。生产建议设置 `REQUIRE_OPENID=true`，服务在没有身份时返回 401；本地开发使用 `x-dev-openid`。内存仓储默认空库，广场演示数据由小程序本地展示，不会写入后端。
+CloudBase 云托管会把微信用户身份注入 `x-wx-openid`。生产建议设置 `REQUIRE_OPENID=true`，服务在没有身份时返回 401；本地开发使用 `x-dev-openid`。内存仓储默认空库；食物库随服务端镜像部署。
 
 ## CloudBase 部署
 

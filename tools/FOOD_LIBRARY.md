@@ -1,6 +1,6 @@
 # 本地食物库
 
-`miniprogram/data/foods.json` 是数据源快照，`miniprogram/data/foods.js` 是小程序运行时使用的 CommonJS 离线索引。微信小程序编译器不直接注册 JSON 的 `require` 模块，因此页面加载 `foods.js`；两个文件由构建脚本同步生成。
+`server/data/foods.json` 是后端使用的数据源快照。小程序通过后端 `/api/v1/foods` 搜索食物和热量，不再打包本地食物数据。
 
 当前由以下数据合并生成：
 
@@ -14,7 +14,7 @@
 python3 tools/build_food_library.py \
   --cfct /path/to/cn-food-data.csv \
   --usda-dir /path/to/usda-foundation-csv \
-  --output miniprogram/data/foods.json
+  --output server/data/foods.json
 ```
 
 不传 `--cfct` 或 `--usda-dir` 时，脚本会从官方/上游地址下载并解压数据：

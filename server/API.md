@@ -9,20 +9,17 @@
 - 审批单的创建、查询、状态筛选和展示字段组装。
 - 投票的选项校验、理由必填、同一用户重复投票拦截，以及审批状态计算。
 - 审批状态变化后，发起人的个人记录同步变化。
+- 食物热量检索和独立饮食记录的持久化。
 - 当前用户的审批记录和统计数据。
 - 只有审批通过的记录才允许打卡，且打卡结果只能是 `真香` 或 `后悔`。
 - 请求身份识别、参数校验、错误码和请求追踪 ID。
 
 后端当前不负责：
 
-- 食物热量推荐。小程序目前从 `miniprogram/data/foods.js` 本地读取。
 - 图片上传。接口只保存已经上传完成的云文件 ID 或 URL 字符串。
-- 个人饮食记录（不关联审批单）的新增接口。当前页面的“添加今日已吃食物”仍只写前端内存。
 - 亲友群、支付、内容审核和管理员后台。
 
-投票 API 会在成功写入后尝试向审批发起人发送一次小程序订阅消息。发起人需在小程序端接受对应模板的一次性订阅；未配置微信凭据或消息发送失败不会影响投票结果。小程序页面当前仍使用本地演示状态，尚未调用这些业务 API，因此生产通知还需要先完成页面 API 接入。
-
-> 广场示例审批只保存在小程序前端，不写入后端。后端接口返回的审批均为真实用户提交的数据。
+投票 API 会在成功写入后尝试向审批发起人发送一次小程序订阅消息。发起人需在小程序端接受对应模板的一次性订阅；未配置微信凭据或消息发送失败不会影响投票结果。小程序页面通过这些接口读写业务数据。
 
 ## 2. 通用约定
 
@@ -32,7 +29,7 @@
 - 请求头：`Content-Type: application/json`。
 - 生产环境由 CloudBase 云托管注入 `x-wx-openid`。本地开发可使用 `x-dev-openid`；生产环境建议设置 `REQUIRE_OPENID=true`，未识别身份时返回 401。
 - 每个响应都会带 `x-request-id`。客户端报错时应记录它，便于服务端排查。
-- 后端生成的 `id` 是字符串 UUID；前端目前的类型仍写成 `number`，接入时需要改成 `string`。
+- 后端生成的审批单和记录 `id` 均为字符串。
 
 ## 3. 接口列表
 
@@ -41,10 +38,12 @@
 | GET | `/health` | 否 | 容器健康检查 |
 | GET | `/api/v1` | 否 | 查看 API 版本和入口 |
 | GET | `/api/v1/approvals` | 否 | 查询审批广场 |
+| GET | `/api/v1/foods` | 否 | 按名称搜索食物和热量参考 |
 | GET | `/api/v1/approvals/:approvalId` | 否 | 查询一张审批单 |
 | POST | `/api/v1/approvals` | 是 | 创建审批单，并创建发起人的个人记录 |
+| POST | `/api/v1/me/records` | 是 | 创建独立饮食记录 |
 | POST | `/api/v1/approvals/:approvalId/votes` | 是 | 对待审批单投票 |
-| GET | `/api/v1/me/records` | 是 | 查询当前用户的审批记录 |
+| GET | `/api/v1/me/records` | 是 | 查询当前用户的饮食记录 |
 | GET | `/api/v1/me/stats` | 是 | 查询当前用户统计 |
 | POST | `/api/v1/me/records/:approvalId/checkin` | 是 | 对已通过的审批记录打卡 |
 
@@ -73,7 +72,13 @@
 
 `GET /api/v1/approvals/:approvalId` 返回同样的审批单对象。不存在时返回 `404 NOT_FOUND`。
 
-### 3.3 创建审批单
+### 3.3 食物检索
+
+`GET /api/v1/foods?keyword=鸡蛋&limit=5`
+
+食物库由后端从 `server/data/foods.json` 读取，支持按名称和别名检索。前端不会打包食物库。
+
+### 3.4 创建审批单
 
 `POST /api/v1/approvals`
 
@@ -105,7 +110,7 @@
 
 成功返回 `201` 和初始状态为 `pending` 的审批单。后端同时创建一条属于当前用户的 `user_records` 记录。
 
-### 3.4 投票
+### 3.5 投票
 
 `POST /api/v1/approvals/:approvalId/votes`
 
@@ -133,11 +138,13 @@ against > support        => rejected
 
 状态变成 `approved` 或 `rejected` 后，发起人的 `user_records.status` 会同步更新。成功返回 `201` 和更新后的审批单。
 
-### 3.5 我的记录和统计
+### 3.6 我的记录和统计
 
 `GET /api/v1/me/records`
 
-只返回当前身份创建的记录，按 `createdAt` 倒序。字段为：`id`（审批单 ID）、`recordId`、`title`、`time`、`calorie`、`status`、`statusLabel`、`checkinResult`。
+返回当前身份的审批记录和独立饮食记录，按 `createdAt` 倒序。字段为：`id`、`title`、`time`、`calorie`、`status`、`statusLabel`、`checkinResult`；审批记录另含 `recordId`（个人记录 ID）。独立记录的 `status` 为 `logged`，其 `id` 是记录 ID。
+
+`POST /api/v1/me/records` 新增独立记录，请求体为 `{ "title": "米饭", "calorie": 230, "image": "" }`。名称必填，热量和图片选填。
 
 `GET /api/v1/me/stats`
 
@@ -155,9 +162,9 @@ against > support        => rejected
 }
 ```
 
-统计只基于当前用户的审批记录：通过率按已提交记录计算，今日热量按当天记录的 `calorie` 求和，被拒绝最多按被拒绝记录的食物名称统计。
+通过率、提交数、通过数和最常被拒绝食物只统计审批记录；今日热量会汇总当前用户当天的审批和独立饮食记录，被拒绝最多按被拒绝审批记录的食物名称统计。
 
-### 3.6 审批后打卡
+### 3.7 审批后打卡
 
 `POST /api/v1/me/records/:approvalId/checkin`
 

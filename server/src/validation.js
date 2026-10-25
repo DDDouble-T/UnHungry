@@ -53,6 +53,15 @@ function validateApprovalInput(input) {
   }
 }
 
+function validateFoodRecordInput(input) {
+  const body = bodyObject(input)
+  return {
+    title: text(body.title ?? body.foodName, '食物名称', { required: true, max: 40 }),
+    calorie: number(body.calorie, '热量', { min: 0, max: 10000 }),
+    image: text(body.image, '食物照片', { max: 2048 }),
+  }
+}
+
 function validateVoteInput(input) {
   const body = bodyObject(input)
   const choice = text(body.choice, '投票选项', { required: true, max: 10 })
@@ -86,6 +95,7 @@ module.exports = {
   CHECKIN_RESULTS,
   VOTE_CHOICES,
   validateApprovalInput,
+  validateFoodRecordInput,
   validateVoteInput,
   validateCheckinInput,
   status,

@@ -24,9 +24,8 @@ import requests
 
 CFCT_URL = "https://raw.githubusercontent.com/ruffood/cn-food-mcp/main/data2026.csv"
 USDA_FOUNDATION_URL = "https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_foundation_food_csv_2026-04-30.zip"
-DEFAULT_OUTPUT = Path("miniprogram/data/foods.json")
-DEFAULT_RUNTIME_OUTPUT = Path("miniprogram/data/foods.js")
-DEFAULT_OVERRIDES = Path("miniprogram/data/food-overrides.json")
+DEFAULT_OUTPUT = Path("server/data/foods.json")
+DEFAULT_OVERRIDES = Path("server/data/food-overrides.json")
 
 
 def normalize_name(value: str) -> str:
@@ -171,7 +170,7 @@ def load_overrides(path: Path) -> list[dict]:
     return values
 
 
-def build(output: Path, runtime_output: Path, overrides_path: Path, cfct_path: Path, usda_root: Path) -> dict[str, int]:
+def build(output: Path, overrides_path: Path, cfct_path: Path, usda_root: Path) -> dict[str, int]:
     rows: list[dict] = []
     known_names: set[str] = set()
 
@@ -206,8 +205,6 @@ def build(output: Path, runtime_output: Path, overrides_path: Path, cfct_path: P
     output.parent.mkdir(parents=True, exist_ok=True)
     serialized = json.dumps(rows, ensure_ascii=False, separators=(",", ":")) + "\n"
     output.write_text(serialized, encoding="utf-8")
-    runtime_output.parent.mkdir(parents=True, exist_ok=True)
-    runtime_output.write_text(f"module.exports = {serialized}", encoding="utf-8")
     return {"total": len(rows), "curated": len(load_overrides(overrides_path)), "cfct": cfct_count, "usda": usda_count}
 
 
@@ -216,7 +213,6 @@ def main() -> None:
     parser.add_argument("--cfct", type=Path, help="中国食物成分表 CSV")
     parser.add_argument("--usda-dir", type=Path, help="已解压的 USDA Foundation Foods CSV 目录")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--runtime-output", type=Path, default=DEFAULT_RUNTIME_OUTPUT)
     parser.add_argument("--overrides", type=Path, default=DEFAULT_OVERRIDES)
     parser.add_argument("--download-dir", type=Path, default=Path("/tmp/unhungry-food-sources"))
     args = parser.parse_args()
@@ -231,7 +227,7 @@ def main() -> None:
         with zipfile.ZipFile(archive) as zip_file:
             zip_file.extractall(temporary_dir)
         usda_dir = temporary_dir
-    counts = build(args.output, args.runtime_output, args.overrides, cfct_path, usda_dir)
+    counts = build(args.output, args.overrides, cfct_path, usda_dir)
     print(json.dumps(counts, ensure_ascii=False))
 
 

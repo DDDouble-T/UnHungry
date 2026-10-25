@@ -82,3 +82,13 @@ test('CloudBase repository uses Node SDK writes and keeps records in sync', asyn
     error => error.code === 'DUPLICATE_VOTE',
   )
 })
+
+test('CloudBase repository persists independent food records', async () => {
+  const repository = new CloudBaseRepository(new FakeDatabase())
+  const created = await repository.createFoodRecord({ title: '米饭', calorie: 230, image: '' }, 'owner-2')
+  const records = await repository.listRecords('owner-2')
+  assert.equal(records.length, 1)
+  assert.equal(records[0]._id, created._id)
+  assert.equal(records[0].status, 'logged')
+  assert.equal(records[0].calorie, 230)
+})

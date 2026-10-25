@@ -1,4 +1,5 @@
 const crypto = require('node:crypto')
+const foods = require('../data/foods.json')
 const { conflict, notFound } = require('./errors')
 
 const COLLECTIONS = { approvals: 'approvals', votes: 'approval_votes', records: 'user_records' }
@@ -10,6 +11,40 @@ function now() {
 
 function newId() {
   return crypto.randomUUID()
+}
+
+function normalizeFoodName(value) {
+  return value.trim().toLowerCase().replace(/[\s·＋+、,，。/\\_\-()（）【】\[\]]/g, '')
+}
+
+function foodScore(query, candidate) {
+  if (candidate === query) return 0
+  if (candidate.includes(query) || query.includes(candidate)) return 1
+  const fragments = new Set()
+  for (let index = 0; index < candidate.length - 1; index += 1) fragments.add(candidate.slice(index, index + 2))
+  let overlap = 0
+  let total = 0
+  for (let index = 0; index < query.length - 1; index += 1) {
+    total += 1
+    if (fragments.has(query.slice(index, index + 2))) overlap += 1
+  }
+  return overlap ? 2 - Math.min(overlap / Math.max(total, 1), 0.9) : null
+}
+
+function searchFoods(keyword, limit) {
+  const query = normalizeFoodName(keyword)
+  if (!query) return []
+  return foods
+    .map(food => {
+      const scores = [food.name, ...(food.aliases || [])]
+        .map(name => foodScore(query, normalizeFoodName(name)))
+        .filter(score => score !== null)
+      return { food, score: scores.length ? Math.min(...scores) : null }
+    })
+    .filter(item => item.score !== null)
+    .sort((left, right) => left.score - right.score || left.food.name.localeCompare(right.food.name))
+    .slice(0, limit)
+    .map(item => item.food)
 }
 
 function calculateStatus(support, against) {
@@ -34,22 +69,37 @@ function recordFor(approval, openid, createdAt = now()) {
   }
 }
 
+function foodRecordFor(input, openid, createdAt = now()) {
+  return {
+    _id: newId(),
+    _openid: openid,
+    title: input.title,
+    calorie: input.calorie,
+    image: input.image,
+    status: 'logged',
+    checkinResult: '',
+    createdAt,
+    updatedAt: createdAt,
+  }
+}
+
 function withoutId(value) {
   const { _id, ...data } = value
   return data
 }
 
 function calculateStats(records) {
-  const approvedCount = records.filter(item => item.status === 'approved').length
-  const rejected = records.filter(item => item.status === 'rejected')
+  const approvalRecords = records.filter(item => item.approvalId)
+  const approvedCount = approvalRecords.filter(item => item.status === 'approved').length
+  const rejected = approvalRecords.filter(item => item.status === 'rejected')
   const rejectedNames = new Map()
   rejected.forEach(item => rejectedNames.set(item.title, (rejectedNames.get(item.title) || 0) + 1))
   const topRejected = [...rejectedNames.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || ''
   const today = new Date().toISOString().slice(0, 10)
   return {
-    submittedCount: records.length,
+    submittedCount: approvalRecords.length,
     approvedCount,
-    approvalRate: records.length ? Math.round((approvedCount / records.length) * 100) : 0,
+    approvalRate: approvalRecords.length ? Math.round((approvedCount / approvalRecords.length) * 100) : 0,
     todayCalories: records.filter(item => item.createdAt.startsWith(today)).reduce((sum, item) => sum + (Number(item.calorie) || 0), 0),
     calorieQuota: 1600,
     savedCalories: rejected.reduce((sum, item) => sum + (Number(item.calorie) || 0), 0),
@@ -70,6 +120,10 @@ class MemoryRepository {
       .filter(item => status === 'all' || item.status === status)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit)
+  }
+
+  async listFoods({ keyword = '', limit = 5 } = {}) {
+    return searchFoods(keyword, limit)
   }
 
   async getApproval(approvalId) {
@@ -128,6 +182,12 @@ class MemoryRepository {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   }
 
+  async createFoodRecord(input, openid) {
+    const record = foodRecordFor(input, openid)
+    this.records.set(record._id, record)
+    return record
+  }
+
   async checkIn(approvalId, result, openid) {
     const record = [...this.records.values()].find(item => item.approvalId === approvalId && item._openid === openid)
     if (!record) throw notFound('没有找到这张审批单的个人记录')
@@ -163,6 +223,10 @@ class CloudBaseRepository {
     if (status !== 'all') query = query.where({ status })
     const result = await query.orderBy('createdAt', 'desc').limit(limit).get()
     return result.data || []
+  }
+
+  async listFoods({ keyword = '', limit = 5 } = {}) {
+    return searchFoods(keyword, limit)
   }
 
   async getApproval(approvalId) {
@@ -242,6 +306,12 @@ class CloudBaseRepository {
   async listRecords(openid) {
     const result = await this.collection(COLLECTIONS.records).where({ _openid: openid }).orderBy('createdAt', 'desc').limit(100).get()
     return result.data || []
+  }
+
+  async createFoodRecord(input, openid) {
+    const record = foodRecordFor(input, openid)
+    await this.collection(COLLECTIONS.records).doc(record._id).set(withoutId(record))
+    return record
   }
 
   async checkIn(approvalId, result, openid) {

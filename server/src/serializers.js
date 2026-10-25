@@ -1,4 +1,4 @@
-const STATUS_LABELS = { pending: '待审批', approved: '已通过', rejected: '先等等' }
+const STATUS_LABELS = { pending: '待审批', approved: '已通过', rejected: '先等等', logged: '已记录' }
 
 function approval(item) {
   return {
@@ -24,8 +24,8 @@ function approval(item) {
 
 function record(item) {
   return {
-    id: item.approvalId,
-    recordId: item._id,
+    id: item.approvalId || item._id,
+    ...(item.approvalId ? { recordId: item._id } : {}),
     title: item.title,
     time: item.createdAt,
     calorie: item.calorie,
