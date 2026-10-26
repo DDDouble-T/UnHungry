@@ -16,7 +16,7 @@ function json(value, fallback) {
 }
 
 function approvalRow(row) {
-  return row ? { ...row, _id: row.id, _openid: row.openid, tags: json(row.tags, []), price: row.price === null ? null : Number(row.price), calorie: row.calorie === null ? null : Number(row.calorie), support: Number(row.support), against: Number(row.against), totalVotes: Number(row.totalVotes), supportRate: Number(row.supportRate) } : row
+  return row ? { ...row, _id: row.id, _openid: row.openid, isAnonymous: row.isAnonymous === undefined || Boolean(row.isAnonymous), tags: json(row.tags, []), price: row.price === null ? null : Number(row.price), calorie: row.calorie === null ? null : Number(row.calorie), support: Number(row.support), against: Number(row.against), totalVotes: Number(row.totalVotes), supportRate: Number(row.supportRate) } : row
 }
 
 function recordRow(row) {
@@ -71,7 +71,7 @@ class MySQLRepository {
     const connection = await this.pool.getConnection()
     try {
       await connection.beginTransaction()
-      await connection.execute('INSERT INTO approvals (id, openid, title, price, calorie, reason, alternative, intake, image, status, support, against, totalVotes, supportRate, tags, emoji, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [id, openid, approval.title, approval.price, approval.calorie, approval.reason, approval.alternative, approval.intake, approval.image, approval.status, 0, 0, 0, 0, JSON.stringify(approval.tags), approval.emoji, createdAt, createdAt])
+      await connection.execute('INSERT INTO approvals (id, openid, authorName, authorAvatar, isAnonymous, title, price, calorie, reason, alternative, intake, image, status, support, against, totalVotes, supportRate, tags, emoji, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [id, openid, approval.authorName, approval.authorAvatar, approval.isAnonymous, approval.title, approval.price, approval.calorie, approval.reason, approval.alternative, approval.intake, approval.image, approval.status, 0, 0, 0, 0, JSON.stringify(approval.tags), approval.emoji, createdAt, createdAt])
       await connection.execute('INSERT INTO user_records (id, openid, approvalId, title, calorie, status, checkinResult, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [record._id, openid, id, record.title, record.calorie, record.status, '', createdAt, createdAt])
       await connection.commit()
       return approval

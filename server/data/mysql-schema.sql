@@ -1,6 +1,9 @@
 CREATE TABLE approvals (
   id VARCHAR(36) PRIMARY KEY,
   openid VARCHAR(128) NOT NULL,
+  authorName VARCHAR(32) NOT NULL DEFAULT '',
+  authorAvatar VARCHAR(2048) NOT NULL DEFAULT '',
+  isAnonymous BOOLEAN NOT NULL DEFAULT FALSE,
   title VARCHAR(40) NOT NULL,
   price DECIMAL(12, 2) NULL,
   calorie DECIMAL(10, 2) NULL,

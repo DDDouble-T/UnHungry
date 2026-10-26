@@ -68,7 +68,9 @@
 | `status` | string | `all` | `all`、`pending`、`approved`、`rejected` |
 | `limit` | integer | `50` | 1 到 100 |
 
-返回 `data` 数组。每项字段：`id`、`status`、`statusLabel`、`title`、`price`、`calorie`、`reason`、`alternative`、`intake`、`image`、`createdAt`、`support`、`against`、`totalVotes`、`supportRate`、`tags`、`emoji`。
+返回 `data` 数组。每项字段：`id`、`authorName`、`authorAvatar`、`isAnonymous`、`status`、`statusLabel`、`title`、`price`、`calorie`、`reason`、`alternative`、`intake`、`image`、`createdAt`、`support`、`against`、`totalVotes`、`supportRate`、`tags`、`emoji`。
+
+默认显示 `authorName` 和 `authorAvatar`。当 `isAnonymous=true` 时，`authorName` 和 `authorAvatar` 均返回空字符串，客户端显示“匿名”；历史审批单缺少匿名选项时保留匿名展示。
 
 `GET /api/v1/approvals/:approvalId` 返回同样的审批单对象。不存在时返回 `404 NOT_FOUND`。
 
@@ -86,6 +88,9 @@
 
 ```json
 {
+  "authorName": "小明",
+  "authorAvatar": "cloud://avatars/xxx.jpg",
+  "isAnonymous": false,
   "title": "烤冷面",
   "price": 15,
   "calorie": 420,
@@ -100,6 +105,9 @@
 
 | 字段 | 必填 | 类型和限制 |
 | --- | --- | --- |
+| `authorName` | 否 | 字符串，最多 32 字符；非匿名时缺省显示“微信用户”，匿名时忽略且不保存名称 |
+| `authorAvatar` | 否 | 头像云文件 ID 或 URL，最多 2048 字符；缺省为空，匿名时忽略且不保存头像 |
+| `isAnonymous` | 否 | 布尔值，默认 `false`，`true` 表示匿名发布 |
 | `title`（或 `foodName`） | 是 | 字符串，最多 40 字符 |
 | `price` | 否 | 0 到 100000 的数字 |
 | `calorie` | 否 | 0 到 10000 的数字，缺省为 `null` |

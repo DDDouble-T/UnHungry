@@ -1,5 +1,5 @@
 import { requestApprovalSubscription } from '../../config'
-import { ApiApproval, ApiFood, ApiRecord, ApiStats, checkIn as submitCheckIn, createApproval, createApprovalVote, createFoodRecord, fetchApproval, fetchApprovals, fetchFoods, fetchRecords, fetchStats, isApiConfigured, resolveApprovalImages, uploadApprovalImage } from '../../utils/api'
+import { ApiApproval, ApiFood, ApiRecord, ApiStats, checkIn as submitCheckIn, createApproval, createApprovalVote, createFoodRecord, fetchApproval, fetchApprovals, fetchFoods, fetchRecords, fetchStats, isApiConfigured, resolveApprovalImages, resolveImageUrls, uploadApprovalImage, uploadAuthorAvatar } from '../../utils/api'
 
 type TabKey = 'square' | 'apply' | 'record' | 'me'
 type FilterKey = 'all' | 'pending' | 'approved' | 'rejected'
@@ -32,6 +32,8 @@ interface FoodSuggestion extends Food {
 
 interface Approval {
   id: string
+  authorName: string
+  authorAvatar: string
   status: Status
   statusLabel: string
   title: string
@@ -52,6 +54,9 @@ interface Approval {
 }
 
 interface ApprovalForm {
+  authorName: string
+  authorAvatar: string
+  isAnonymous: boolean
   foodName: string
   price: string
   calorie: string
@@ -73,7 +78,18 @@ interface MyRecord {
 
 const labels: Record<Status, string> = { pending: '待审批', approved: '已通过', rejected: '先等等' }
 
-const blankForm = (): ApprovalForm => ({ foodName: '', price: '', calorie: '', portion: '', reason: '', alternative: '', intake: '' })
+function savedAuthor(): { authorName: string; authorAvatar: string } {
+  try {
+    const profile = wx.getStorageSync('approvalAuthor')
+    if (profile && typeof profile.authorName === 'string') {
+      return { authorName: profile.authorName.trim().slice(0, 32), authorAvatar: typeof profile.authorAvatar === 'string' ? profile.authorAvatar : '' }
+    }
+    const name = wx.getStorageSync('approvalAuthorName')
+    return { authorName: typeof name === 'string' ? name.trim().slice(0, 32) : '', authorAvatar: '' }
+  } catch { return { authorName: '', authorAvatar: '' } }
+}
+
+const blankForm = (): ApprovalForm => ({ ...savedAuthor(), isAnonymous: false, foodName: '', price: '', calorie: '', portion: '', reason: '', alternative: '', intake: '' })
 let keyboardHeightListener: ((result: { height: number }) => void) | null = null
 let foodSearchRequestId = 0
 let dataLoadRequestId = 0
@@ -116,6 +132,13 @@ Component({
     approvals: [] as Approval[],
     filteredApprovals: [] as Approval[],
     form: blankForm(),
+    nicknameAction: '' as '' | 'apply' | 'submit' | 'edit',
+    nicknameInitialValue: '',
+    avatarPreview: '',
+    avatarDraft: '',
+    avatarDraftPath: '',
+    profileSaving: false,
+    nicknameKeyboardHeight: 0,
     foodSuggestions: [] as FoodSuggestion[],
     foodMatchHint: '',
     selectedFoodId: '',
@@ -163,6 +186,7 @@ Component({
         })
       }
       wx.onKeyboardHeightChange(keyboardHeightListener)
+      void this.restoreAuthorAvatar()
       this.setData({ initialLoadStarted: true })
       void this.loadData(this.data.shareTargetId as string)
     },
@@ -230,6 +254,8 @@ Component({
       const status = item.status
       return {
         id: item.id,
+        authorName: item.isAnonymous === false ? item.authorName || '微信用户' : '匿名',
+        authorAvatar: item.isAnonymous === false ? item.authorAvatar || '' : '',
         status,
         statusLabel: labels[status],
         title: item.title,
@@ -282,13 +308,75 @@ Component({
     },
     switchTab(e: any) {
       const activeTab = e.currentTarget.dataset.tab as TabKey
+      if (activeTab === 'apply') { this.startApply(); return }
       this.setData({
         activeTab,
         formFocusAnchor: '',
-        ...(activeTab === 'apply' || activeTab === 'record' ? {} : { keyboardHeight: 0, pageScrollStyle: '' }),
+        ...(activeTab === 'record' ? {} : { keyboardHeight: 0, pageScrollStyle: '' }),
       })
     },
-    startApply() { this.setData({ activeTab: 'apply' as TabKey, formFocusAnchor: 'form-field-foodName' }) },
+    startApply() {
+      if (!this.data.form.isAnonymous && !this.data.form.authorName.trim()) {
+        this.showNicknameSheet('apply')
+        return
+      }
+      this.setData({ activeTab: 'apply' as TabKey, formFocusAnchor: 'form-field-foodName' })
+    },
+    showNicknameSheet(action: 'apply' | 'submit' | 'edit') {
+      this.setData({ nicknameAction: action, nicknameInitialValue: this.data.form.authorName, avatarDraft: this.data.avatarPreview || this.data.form.authorAvatar, avatarDraftPath: '', nicknameKeyboardHeight: 0 })
+    },
+    editNickname() { this.showNicknameSheet('edit') },
+    closeNicknameSheet() {
+      if (this.data.profileSaving) return
+      this.setData({ nicknameAction: '', nicknameKeyboardHeight: 0 })
+    },
+    async restoreAuthorAvatar() {
+      const avatar = this.data.form.authorAvatar
+      if (!avatar) return
+      try {
+        const urls = await resolveImageUrls([avatar])
+        if (this.data.form.authorAvatar === avatar) {
+          const preview = urls.get(avatar) || avatar
+          this.setData({ avatarPreview: preview, ...(this.data.nicknameAction && !this.data.avatarDraftPath ? { avatarDraft: preview } : {}) })
+        }
+      } catch (error) { console.warn('load avatar failed', error) }
+    },
+    onChooseAvatar(e: WechatMiniprogram.CustomEvent<{ avatarUrl: string }>) {
+      if (this.data.profileSaving || !e.detail.avatarUrl) return
+      this.setData({ avatarDraft: e.detail.avatarUrl, avatarDraftPath: e.detail.avatarUrl })
+    },
+    onNicknameReview(e: any) {
+      const pass = Boolean(e.detail && e.detail.pass)
+      if (this.data.nicknameAction && !pass && !(e.detail && e.detail.timeout)) {
+        wx.showToast({ title: '昵称未通过审核，请重新选择或填写', icon: 'none' })
+      }
+    },
+    onNicknameKeyboardHeightChange(e: any) { this.setData({ nicknameKeyboardHeight: Math.max(0, Number(e.detail.height) || 0) }) },
+    async confirmNickname(e: WechatMiniprogram.CustomEvent<{ value: { authorName: string } }>) {
+      if (this.data.profileSaving) return
+      // 微信昵称由原生组件回填，并在失焦时异步审核；以表单提交值为准，避免缓存输入值覆盖回填结果。
+      const authorName = e.detail.value.authorName.trim()
+      if (!authorName) { wx.showToast({ title: '请选择或填写昵称', icon: 'none' }); return }
+      if (authorName.length > 32) { wx.showToast({ title: '昵称最多32个字符', icon: 'none' }); return }
+      const action = this.data.nicknameAction
+      this.setData({ profileSaving: true })
+      try {
+        // chooseAvatar 返回临时路径；上传后缓存云文件 ID，避免下次打开头像失效。
+        const authorAvatar = this.data.avatarDraftPath ? await uploadAuthorAvatar(this.data.avatarDraftPath) : this.data.form.authorAvatar
+        wx.setStorageSync('approvalAuthor', { authorName, authorAvatar })
+        this.setData({ 'form.authorName': authorName, 'form.authorAvatar': authorAvatar, avatarPreview: this.data.avatarDraft || this.data.avatarPreview || authorAvatar, nicknameAction: '', nicknameKeyboardHeight: 0 })
+        if (action === 'apply') this.startApply()
+        if (action === 'submit') void this.submitApproval()
+      } catch (error) {
+        console.warn('save profile failed', error)
+        wx.showToast({ title: '保存失败，请重试', icon: 'none' })
+      } finally {
+        this.setData({ profileSaving: false })
+      }
+    },
+    onAnonymousChange(e: any) {
+      this.setData({ 'form.isAnonymous': e.detail.value.includes('anonymous') })
+    },
     startRecord() {
       this.resetForm()
       this.setData({ activeTab: 'record' as TabKey, formFocusAnchor: 'form-field-foodName' })
@@ -334,7 +422,9 @@ Component({
       const choice = this.data.voteChoice as VoteChoice
       this.setData({ voteSubmitting: true })
       try {
-        const updated = this.mapApiApproval(await createApprovalVote(targetId, { choice, reason }))
+        const item = await createApprovalVote(targetId, { choice, reason })
+        const existing = (this.data.approvals as Approval[]).find(approval => approval.id === targetId)
+        const updated = this.mapApiApproval({ ...item, authorAvatar: existing ? existing.authorAvatar : '', image: existing && existing.image || item.image })
         const approvals = (this.data.approvals as Approval[]).map(item => item.id === targetId ? updated : item)
         this.setData({ approvals, filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey), filterCounts: this.getFilterCounts(approvals), voteTargetId: '', voteChoice: '', voteReason: '' })
         await this.loadData()
@@ -429,9 +519,10 @@ Component({
     async submitApproval() {
       if (this.data.approvalSubmitting) return
       const form = this.data.form as ApprovalForm
-      const required: Array<[keyof ApprovalForm, string]> = [['foodName', '食物名称'], ['reason', '想吃理由']]
+      const required: Array<[FormField, string]> = [['foodName', '食物名称'], ['reason', '想吃理由']]
       const missing = required.find(([field]) => !form[field].trim())
       if (missing) { wx.showToast({ title: `请补充${missing[1]}`, icon: 'none' }); return }
+      if (!form.isAnonymous && !form.authorName.trim()) { this.showNicknameSheet('submit'); return }
       const price = form.price.trim()
       if (price && (!Number.isFinite(Number(price)) || Number(price) < 0)) { wx.showToast({ title: '请输入有效价格', icon: 'none' }); return }
       if (!isApiConfigured()) { wx.showToast({ title: '请先配置后端服务', icon: 'none' }); return }
@@ -441,6 +532,9 @@ Component({
         const imagePath = this.data.uploadedImage as string
         const image = imagePath ? await uploadApprovalImage(imagePath) : ''
         const item = await createApproval({
+          authorName: form.isAnonymous ? '' : form.authorName.trim(),
+          authorAvatar: form.isAnonymous ? '' : form.authorAvatar,
+          isAnonymous: form.isAnonymous,
           title: form.foodName.trim(),
           ...(price ? { price: Number(price) } : {}),
           ...(form.calorie.trim() ? { calorie: Number(form.calorie) } : {}),
@@ -449,7 +543,7 @@ Component({
           intake: form.intake.trim(),
           image,
         })
-        const approval = this.mapApiApproval(item)
+        const approval = this.mapApiApproval({ ...item, authorAvatar: form.isAnonymous ? '' : this.data.avatarPreview, image: imagePath || item.image })
         const approvals = [approval, ...(this.data.approvals as Approval[])]
         this.setData({ approvals, filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey), filterCounts: this.getFilterCounts(approvals), form: blankForm(), uploadedImage: '', foodSuggestions: [], foodMatchHint: '', selectedFoodId: '', selectedFood: null, portionOptions: [], portionIndex: 0, calorieHint: '', calorieSource: 'manual' as CalorieSource, activeTab: 'square' as TabKey, formFocusAnchor: '', keyboardHeight: 0, pageScrollStyle: '' })
         await this.loadData()

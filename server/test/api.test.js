@@ -173,3 +173,76 @@ test('malformed JSON is rejected as a client error', async () => {
   assert.equal(result.response.status, 400)
   assert.equal(result.body.error.code, 'INVALID_JSON')
 })
+
+
+test('approval names default to public and anonymous names stay private across reads and votes', async () => {
+  const named = await request('/api/v1/approvals', {
+    method: 'POST',
+    body: JSON.stringify({ title: '粥', reason: '饿了', authorName: ' 小明 ', authorAvatar: 'cloud://avatars/xiaoming.jpg' }),
+  })
+  assert.equal(named.response.status, 201)
+  assert.equal(named.body.data.isAnonymous, false)
+  assert.equal(named.body.data.authorName, '小明')
+  assert.equal(named.body.data.authorAvatar, 'cloud://avatars/xiaoming.jpg')
+  const namedDetail = await request(`/api/v1/approvals/${named.body.data.id}`)
+  assert.equal(namedDetail.body.data.authorName, '小明')
+  assert.equal(namedDetail.body.data.authorAvatar, 'cloud://avatars/xiaoming.jpg')
+
+  const anonymous = await request('/api/v1/approvals', {
+    method: 'POST',
+    body: JSON.stringify({ title: '苹果', reason: '想吃水果', authorName: '秘密昵称', authorAvatar: 'cloud://avatars/secret.jpg', isAnonymous: true }),
+  })
+  assert.equal(anonymous.response.status, 201)
+  assert.equal(anonymous.body.data.isAnonymous, true)
+  assert.equal(anonymous.body.data.authorName, '')
+  assert.equal(anonymous.body.data.authorAvatar, '')
+  const approvalId = anonymous.body.data.id
+  const detail = await request(`/api/v1/approvals/${approvalId}`)
+  assert.equal(detail.body.data.isAnonymous, true)
+  assert.equal(detail.body.data.authorName, '')
+  assert.equal(detail.body.data.authorAvatar, '')
+  const list = await request('/api/v1/approvals')
+  assert.equal(list.body.data.find(item => item.id === approvalId).authorName, '')
+  assert.equal(JSON.stringify(list.body).includes('秘密昵称'), false)
+  assert.equal(JSON.stringify(list.body).includes('secret.jpg'), false)
+  const voted = await request(`/api/v1/approvals/${approvalId}/votes`, {
+    method: 'POST', headers: { 'x-dev-openid': 'privacy-voter' },
+    body: JSON.stringify({ choice: 'approve', reason: '水果不错' }),
+  })
+  assert.equal(voted.response.status, 201)
+  assert.equal(voted.body.data.authorName, '')
+  assert.equal(voted.body.data.authorAvatar, '')
+  assert.equal(voted.body.data.isAnonymous, true)
+  assert.equal('_openid' in voted.body.data, false)
+})
+
+test('approval privacy validates booleans and name length', async () => {
+  for (const isAnonymous of ['false', 'true', 0, 1, null, {}, []]) {
+    const result = await request('/api/v1/approvals', {
+      method: 'POST', body: JSON.stringify({ title: '粥', reason: '饿了', isAnonymous }),
+    })
+    assert.equal(result.response.status, 400)
+  }
+  const longName = await request('/api/v1/approvals', {
+    method: 'POST', body: JSON.stringify({ title: '粥', reason: '饿了', authorName: '名'.repeat(33) }),
+  })
+  assert.equal(longName.response.status, 400)
+  const { approval } = require('../src/serializers')
+  assert.equal(approval({ _id: 'legacy', authorName: '旧名称' }).isAnonymous, true)
+  assert.equal(approval({ _id: 'legacy', authorName: '旧名称' }).authorName, '')
+  assert.equal(approval({ _id: 'legacy', authorAvatar: 'cloud://secret' }).authorAvatar, '')
+  const { validateApprovalInput } = require('../src/validation')
+  const hidden = validateApprovalInput({ title: '粥', reason: '饿了', isAnonymous: true, authorName: '秘密昵称', authorAvatar: 'cloud://secret' })
+  assert.equal(hidden.authorName, '')
+  assert.equal(hidden.authorAvatar, '')
+})
+
+
+test('avatar input rejects invalid types and oversize values', async () => {
+  for (const authorAvatar of [42, {}, 'x'.repeat(2049)]) {
+    const result = await request('/api/v1/approvals', {
+      method: 'POST', body: JSON.stringify({ title: '粥', reason: '饿了', authorAvatar }),
+    })
+    assert.equal(result.response.status, 400)
+  }
+})

@@ -2,6 +2,9 @@ import { CLOUDBASE_ENV_ID, CLOUD_SERVICE_NAME } from '../config'
 
 export interface ApiApproval {
   id: string
+  authorName: string
+  authorAvatar: string
+  isAnonymous: boolean
   status: 'pending' | 'approved' | 'rejected'
   title: string
   price: number | null
@@ -112,6 +115,9 @@ export function fetchFoods(keyword: string) {
 }
 
 export function createApproval(input: {
+  authorName: string
+  authorAvatar: string
+  isAnonymous: boolean
   title: string
   price?: number
   calorie?: number
@@ -151,10 +157,22 @@ export async function uploadApprovalImage(filePath: string) {
   return result.fileID
 }
 
-export async function resolveApprovalImages(items: ApiApproval[]) {
-  const fileIds = [...new Set(items.map(item => item.image).filter(image => image.startsWith('cloud://')))]
-  if (!fileIds.length) return items
+export async function uploadAuthorAvatar(filePath: string) {
+  const result = await wx.cloud.uploadFile({
+    cloudPath: `avatars/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`,
+    filePath,
+  })
+  return result.fileID
+}
+
+export async function resolveImageUrls(images: string[]) {
+  const fileIds = [...new Set(images.filter(image => image.startsWith('cloud://')))]
+  if (!fileIds.length) return new Map<string, string>()
   const result = await wx.cloud.getTempFileURL({ fileList: fileIds })
-  const urls = new Map((result.fileList || []).map(file => [file.fileID, file.tempFileURL]))
-  return items.map(item => ({ ...item, image: urls.get(item.image) || item.image }))
+  return new Map((result.fileList || []).map(file => [file.fileID, file.tempFileURL]))
+}
+
+export async function resolveApprovalImages(items: ApiApproval[]) {
+  const urls = await resolveImageUrls(items.flatMap(item => [item.image || '', item.authorAvatar || '']))
+  return items.map(item => ({ ...item, image: urls.get(item.image) || item.image, authorAvatar: urls.get(item.authorAvatar) || item.authorAvatar || '' }))
 }

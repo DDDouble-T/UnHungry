@@ -69,10 +69,14 @@ class FakeDatabase {
 test('CloudBase repository uses Node SDK writes and keeps records in sync', async () => {
   const repository = new CloudBaseRepository(new FakeDatabase())
   const created = await repository.createApproval({
-    title: '豆花', price: 12, calorie: 180, reason: '想吃甜的', alternative: '无糖酸奶', intake: '', image: '',
+    authorName: '小明', authorAvatar: 'cloud://avatars/me.jpg', isAnonymous: false, title: '豆花', price: 12, calorie: 180, reason: '想吃甜的', alternative: '无糖酸奶', intake: '', image: '',
   }, 'owner-1')
   const voted = await repository.createVote(created._id, { choice: 'approve', reason: '今天运动过了' }, 'voter-1')
   assert.equal(voted.status, 'approved')
+  assert.equal(voted.authorName, '小明')
+  assert.equal(voted.authorAvatar, 'cloud://avatars/me.jpg')
+  assert.equal(voted.isAnonymous, false)
+  assert.equal((await repository.getApproval(created._id)).authorName, '小明')
   const records = await repository.listRecords('owner-1')
   assert.equal(records.length, 1)
   assert.equal(records[0].status, 'approved')

@@ -15,7 +15,7 @@
       </view></scroll-view>
       <view class="approval-list"><block wx:for="{{filteredApprovals}}" wx:key="id" wx:for-item="item">
         <view id="approval-{{item.id}}" class="approval-card {{shareTargetId == item.id ? 'share-selected' : ''}}">
-          <view class="approval-head"><view class="food-token">{{item.emoji}}</view><view class="approval-heading"><view class="approval-title-row"><text class="approval-title">{{item.title}}</text><text class="status-pill status-{{item.status}}">{{item.statusLabel}}</text></view><text class="approval-meta">匿名 · {{item.time}}</text></view><view wx:if="{{item.price}}" class="approval-price"><text>¥</text>{{item.price}}</view><text wx:else class="approval-price-empty">未填价格</text></view>
+          <view class="approval-head"><view class="food-token">{{item.emoji}}</view><view class="approval-heading"><view class="approval-title-row"><text class="approval-title">{{item.title}}</text><text class="status-pill status-{{item.status}}">{{item.statusLabel}}</text></view><view class="approval-meta"><image wx:if="{{item.authorAvatar}}" class="author-avatar" src="{{item.authorAvatar}}" mode="aspectFill"></image><text>{{item.authorName}} · {{item.time}}</text></view></view><view wx:if="{{item.price}}" class="approval-price"><text>¥</text>{{item.price}}</view><text wx:else class="approval-price-empty">未填价格</text></view>
           <view class="tag-row"><text class="info-tag">{{item.calorie}} kcal</text><block wx:for="{{item.tags}}" wx:key="*this" wx:for-item="tag"><text class="info-tag">{{tag}}</text></block></view><image wx:if="{{item.image}}" class="approval-image" src="{{item.image}}" mode="aspectFill"></image>
           <view class="reason-block"><text class="reason-label">想吃，因为</text><text class="reason-text">{{item.reason}}</text></view><view wx:if="{{item.alternative}}" class="alternative-row"><text class="alternative-label">也可以试试</text><text class="alternative-text">{{item.alternative}}</text></view><view wx:if="{{item.intake}}" class="intake-row"><text>今天已摄入</text><text>{{item.intake}}</text></view>
           <view class="vote-summary"><view class="vote-label"><text>目前 {{item.totalVotes}} 人投票</text><text class="support-rate">{{item.supportRate}}% 支持</text></view><view class="progress-track"><view class="progress-fill" style="width: {{item.supportRate}}%;"></view></view></view>
@@ -37,7 +37,9 @@
         <view id="form-field-alternative" class="field-block"><text class="field-label">更健康的替代方案 <text class="optional-note">选填</text></text><input class="field-input" value="{{form.alternative}}" data-field="alternative" bindfocus="onFormFocus" bindinput="onFormInput" adjust-position="false" placeholder="比如：无糖酸奶 + 香蕉" maxlength="50" /></view>
         <view id="form-field-intake" class="field-block"><text class="field-label">今天已经吃了什么</text><input class="field-input" value="{{form.intake}}" data-field="intake" bindfocus="onFormFocus" bindinput="onFormInput" adjust-position="false" placeholder="选填，让大家判断更准确" maxlength="60" /></view>
         <view class="photo-field" bindtap="chooseImage"><view class="photo-placeholder" wx:if="{{!uploadedImage}}"><text class="photo-plus">＋</text><text>添加食物照片</text></view><image wx:else class="photo-preview" src="{{uploadedImage}}" mode="aspectFill"></image></view>
-        <view class="form-footnote"><text class="footnote-mark">i</text><text>审批单会匿名展示，投票必须写理由才会生效。</text></view><view class="form-actions"><button class="quiet-button" bindtap="resetForm">清空</button><button class="primary-button" bindtap="submitApproval">发出审批单 <text>→</text></button></view>
+        <view class="form-footnote"><text class="footnote-mark">i</text><text>投票必须写理由才会生效。</text></view>
+        <view class="approval-identity"><checkbox-group bindchange="onAnonymousChange"><label class="anonymous-option"><checkbox class="anonymous-checkbox" value="anonymous" checked="{{form.isAnonymous}}" aria-label="匿名发布" /><view class="anonymous-circle {{form.isAnonymous ? 'is-checked' : ''}}" aria-hidden="true"><text wx:if="{{form.isAnonymous}}">✓</text></view><text>匿名发布</text></label></checkbox-group></view>
+        <view class="form-actions"><button class="quiet-button" bindtap="resetForm">清空</button><button class="primary-button" bindtap="submitApproval">发出审批单 <text>→</text></button></view>
       </view><view class="bottom-space"></view>
     </block>
 
@@ -54,7 +56,7 @@
 
     <block wx:if="{{activeTab == 'me'}}">
       <view wx:if="{{loading}}" class="empty-state"><text>正在加载数据…</text></view><view wx:elif="{{apiError}}" class="empty-state"><text>{{apiError}}</text><text class="section-link" bindtap="retryLoadData">点击重试</text></view><block wx:else>
-      <view class="profile-head"><view class="avatar-large">等</view><view><text class="eyebrow">MY PAUSE LOG</text><text class="profile-name">今天也在和肚子商量</text><text class="profile-caption">坚持不是忍住所有，而是多想十秒。</text></view></view>
+      <view class="profile-head" bindtap="editNickname"><image wx:if="{{avatarPreview}}" class="avatar-large" src="{{avatarPreview}}" mode="aspectFill"></image><view wx:else class="avatar-large">等</view><view><text class="eyebrow">MY PAUSE LOG</text><text class="profile-name">{{form.authorName || '点击设置头像和昵称'}}</text><text class="profile-caption">坚持不是忍住所有，而是多想十秒。</text></view></view>
       <view class="stats-grid"><view class="stat-cell"><text class="stat-value">{{approvalRate}}%</text><text class="stat-label">通过率</text></view><view class="stat-cell"><text class="stat-value">{{savedCalories}}</text><text class="stat-label">累计省下 kcal</text></view><view class="stat-cell"><text class="stat-value">{{submittedCount}}</text><text class="stat-label">累计审批单</text></view></view>
       <view class="section-head personal-section"><view><text class="section-title">今日配额</text><text class="section-note">给身体留一点余地</text></view><text class="quota-label">{{todayCalories}} / {{calorieQuota}} kcal</text></view>
       <view class="quota-card"><view class="quota-bar"><view class="quota-bar-fill" style="width: {{quotaPercent}}%;"></view></view><view class="quota-copy"><text>还剩 {{calorieQuota - todayCalories}} kcal</text><text>被驳回最多：{{topRejected}}</text></view></view>
@@ -66,5 +68,16 @@
   </scroll-view>
 
   <view wx:if="{{keyboardHeight == 0}}" class="tabbar"><view class="tab-item {{activeTab == 'square' ? 'tab-active' : ''}}" data-tab="square" bindtap="switchTab"><text class="tab-icon">◎</text><text>广场</text></view><view class="create-tab" data-tab="apply" bindtap="switchTab"><view class="create-icon">＋</view><text>发起审批</text></view><view class="tab-item {{activeTab == 'me' ? 'tab-active' : ''}}" data-tab="me" bindtap="switchTab"><view class="tab-icon profile-icon"><view class="profile-head-icon"></view><view class="profile-body-icon"></view></view><text>我的</text></view></view>
+  <view wx:if="{{nicknameAction}}" class="sheet-backdrop nickname-backdrop" style="padding-bottom: {{nicknameKeyboardHeight}}px;" catchtap="closeNicknameSheet">
+    <form class="vote-sheet" catchtap="stopPropagation" bindsubmit="confirmNickname">
+      <view class="sheet-handle"></view>
+      <view class="sheet-heading"><view><text class="sheet-title">完善头像和昵称</text><text class="sheet-subtitle">用于在审批卡片中展示你的头像和昵称。</text></view><text class="sheet-close" bindtap="closeNicknameSheet">×</text></view>
+      <view class="profile-fields">
+        <view class="profile-field"><text class="profile-field-label">头像</text><button class="avatar-picker" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar" disabled="{{profileSaving}}"><image wx:if="{{avatarDraft}}" class="avatar-choice" src="{{avatarDraft}}" mode="aspectFill"></image><view wx:else class="avatar-choice avatar-placeholder">＋</view><text class="avatar-picker-hint">{{avatarDraft ? '更换头像' : '选择头像'}}</text><text class="profile-field-arrow">›</text></button></view>
+        <view class="profile-field"><text class="profile-field-label">昵称</text><input class="nickname-input" name="authorName" type="nickname" value="{{nicknameInitialValue}}" disabled="{{profileSaving}}" bindkeyboardheightchange="onNicknameKeyboardHeightChange" bindnicknamereview="onNicknameReview" adjust-position="false" placeholder="点击使用微信昵称" maxlength="32" /></view>
+      </view>
+      <button class="primary-button sheet-button" form-type="submit" loading="{{profileSaving}}" disabled="{{profileSaving}}">{{profileSaving ? '正在保存' : '保存并继续'}} <text wx:if="{{!profileSaving}}">→</text></button>
+    </form>
+  </view>
   <view wx:if="{{voteTargetId}}" class="sheet-backdrop" catchtap="closeVoteSheet"><view class="vote-sheet" catchtap="stopPropagation"><view class="sheet-handle"></view><view class="sheet-heading"><view><text class="sheet-title">{{voteChoice == 'approve' ? '你觉得可以吃吗？' : '你想让这顿等等？'}}</text><text class="sheet-subtitle">说说理由，这张票才会被大家看见。</text></view><text class="sheet-close" bindtap="closeVoteSheet">×</text></view><textarea class="vote-textarea" value="{{voteReason}}" bindinput="onVoteReasonInput" placeholder="比如：今天运动量够，偶尔吃一次没关系。" maxlength="80" auto-height="true"></textarea><button class="primary-button sheet-button" bindtap="submitVote">提交这张票 <text>→</text></button></view></view>
 </view>

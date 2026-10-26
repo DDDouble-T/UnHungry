@@ -42,7 +42,14 @@ function id(value, field = 'id') {
 
 function validateApprovalInput(input) {
   const body = bodyObject(input)
+  if (body.isAnonymous !== undefined && typeof body.isAnonymous !== 'boolean') {
+    throw badRequest('INVALID_FIELD', '匿名选项必须是布尔值', { field: 'isAnonymous' })
+  }
+  const isAnonymous = body.isAnonymous === true
   return {
+    isAnonymous,
+    authorName: isAnonymous ? '' : text(body.authorName, '名称', { max: 32 }) || '微信用户',
+    authorAvatar: isAnonymous ? '' : text(body.authorAvatar, '头像', { max: 2048 }),
     title: text(body.title ?? body.foodName, '食物名称', { required: true, max: 40 }),
     price: number(body.price, '价格', { min: 0, max: 100000 }),
     calorie: number(body.calorie, '热量', { min: 0, max: 10000 }),

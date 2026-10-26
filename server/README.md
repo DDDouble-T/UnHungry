@@ -56,7 +56,7 @@ CloudBase 云托管会把微信用户身份注入 `x-wx-openid`。生产建议�
 
 ### 云托管 MySQL（当前默认方案）
 
-1. 创建云托管 MySQL 数据库，并执行 `data/mysql-schema.sql`。
+1. 创建云托管 MySQL 数据库，并执行 `data/mysql-schema.sql`。已有数据库在部署本次服务前依次执行一次 `data/migrations/20261026-approval-author.sql` 和 `data/migrations/20261026-approval-avatar.sql`，补充名称、头像和匿名选项，并保留历史审批单的匿名状态。
 2. 在服务环境变量中配置 `DB_DRIVER=mysql`、`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DATABASE`、`MYSQL_USER` 和 `MYSQL_PASSWORD`。
 3. 保留 `NODE_ENV=production` 和 `REQUIRE_OPENID=true`。MySQL 模式不需要 `TCB_ENV_ID` 才能访问业务数据，但建议仍保留环境 ID供云调用和文件服务使用。
 
