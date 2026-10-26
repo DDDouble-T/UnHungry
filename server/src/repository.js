@@ -329,8 +329,13 @@ class CloudBaseRepository {
   }
 }
 
-function createRepository({ envId = process.env.TCB_ENV_ID || process.env.CLOUDBASE_ENV_ID, forceMemory = process.env.USE_MEMORY_DB === '1' } = {}) {
-  if (forceMemory || (process.env.NODE_ENV !== 'production' && !envId)) return new MemoryRepository()
+function createRepository({ envId = process.env.TCB_ENV_ID || process.env.CLOUDBASE_ENV_ID, forceMemory = process.env.USE_MEMORY_DB === '1', driver = process.env.DB_DRIVER || '' } = {}) {
+  if (forceMemory) return new MemoryRepository()
+  if (driver === 'mysql') {
+    const { MySQLRepository, createMySQLPool } = require('./mysql-repository')
+    return new MySQLRepository(createMySQLPool())
+  }
+  if (process.env.NODE_ENV !== 'production' && !envId) return new MemoryRepository()
   if (!envId) throw new Error('生产环境必须配置 TCB_ENV_ID 或 CLOUDBASE_ENV_ID')
   let cloudbase
   try {
@@ -342,4 +347,4 @@ function createRepository({ envId = process.env.TCB_ENV_ID || process.env.CLOUDB
   return new CloudBaseRepository(app.database())
 }
 
-module.exports = { COLLECTIONS, CloudBaseRepository, MemoryRepository, createRepository, calculateStatus }
+module.exports = { COLLECTIONS, CloudBaseRepository, MemoryRepository, createRepository, calculateStatus, calculateStats, searchFoods }

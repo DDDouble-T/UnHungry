@@ -1,6 +1,6 @@
 # UnHungry 云托管后端 MVP
 
-这是“肚子请等等”小程序的 Node.js + Express 后端。服务可以直接作为 CloudBase 云托管容器运行：有 `TCB_ENV_ID` 时使用 CloudBase 数据库，本地没有云环境时使用内存仓储；生产环境缺少环境 ID 会直接启动失败，避免数据静默丢失。
+这是“肚子请等等”小程序的 Node.js + Express 后端。服务可以直接作为云托管容器运行。生产建议使用 `DB_DRIVER=mysql` 连接云托管 MySQL；未设置该开关时使用保留的 CloudBase 数据库实现，本地没有数据库配置时使用内存仓储。
 
 ## 本地运行
 
@@ -53,6 +53,14 @@ curl -H 'x-dev-openid: user-a' http://localhost:3000/health
 CloudBase 云托管会把微信用户身份注入 `x-wx-openid`。生产建议设置 `REQUIRE_OPENID=true`，服务在没有身份时返回 401；本地开发使用 `x-dev-openid`。内存仓储默认空库；食物库随服务端镜像部署。
 
 ## CloudBase 部署
+
+### 云托管 MySQL（当前默认方案）
+
+1. 创建云托管 MySQL 数据库，并执行 `data/mysql-schema.sql`。
+2. 在服务环境变量中配置 `DB_DRIVER=mysql`、`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DATABASE`、`MYSQL_USER` 和 `MYSQL_PASSWORD`。
+3. 保留 `NODE_ENV=production` 和 `REQUIRE_OPENID=true`。MySQL 模式不需要 `TCB_ENV_ID` 才能访问业务数据，但建议仍保留环境 ID供云调用和文件服务使用。
+
+`@cloudbase/node-sdk` 仍保留在依赖中。将 `DB_DRIVER` 改回空值即可切回 CloudBase 仓储。
 
 1. 在 CloudBase 环境中创建数据库，并为 `approvals`、`approval_votes`、`user_records` 创建集合。
 2. 将 `server` 目录作为云托管服务目录，使用其中的 `Dockerfile` 构建，服务端口填 `3000`。

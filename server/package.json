@@ -8,13 +8,14 @@
     "start": "node src/app.js",
     "dev": "node --watch src/app.js",
     "test": "node --test test/*.test.js",
-    "check": "node --check src/app.js && node --check src/repository.js && node --check src/serializers.js && node --check src/validation.js && node --check src/notifications.js && node --check test/api.test.js && node --check test/cloudbase-repository.test.js && node --check test/notifications.test.js"
+    "check": "node --check src/app.js && node --check src/repository.js && node --check src/mysql-repository.js && node --check src/serializers.js && node --check src/validation.js && node --check src/notifications.js && node --check test/api.test.js && node --check test/cloudbase-repository.test.js && node --check test/notifications.test.js"
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
     "@cloudbase/node-sdk": "^3.15.0",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "mysql2": "^3.24.6"
   }
 }
