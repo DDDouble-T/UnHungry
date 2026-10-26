@@ -370,6 +370,11 @@ Component({
       }
       this.setData({ [`form.${field}`]: value, ...(field === 'calorie' ? { calorieSource: 'manual' as CalorieSource } : {}) })
     },
+    dismissFoodSuggestions() {
+      // 关闭后忽略在途搜索结果，避免填写其他字段时下拉框重新出现。
+      foodSearchRequestId += 1
+      this.setData({ foodSuggestions: [], foodMatchHint: '' })
+    },
     async searchFoods(keyword: string, requestId: number) {
       try {
         const suggestions = (await fetchFoods(keyword)).map(mapFood)
@@ -415,6 +420,7 @@ Component({
     },
     onFormFocus(e: any) {
       const field = e.currentTarget.dataset.field as FormField
+      if (field !== 'foodName') this.dismissFoodSuggestions()
       this.setData({ formFocusAnchor: `form-field-${field}` })
     },
     chooseImage() {
