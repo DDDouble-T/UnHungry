@@ -1,2 +1,0 @@
-ALTER TABLE approvals
-  ADD COLUMN authorAvatar VARCHAR(2048) NOT NULL DEFAULT '';

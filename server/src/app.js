@@ -51,6 +51,7 @@ function createApp({ repository = createRepository(), notifier = createNotifier(
       '/api/v1/approvals/:approvalId',
       '/api/v1/approvals/:approvalId/votes',
       '/api/v1/me/records',
+      '/api/v1/me/records/:approvalId/food',
       '/api/v1/me/records/:approvalId/checkin',
       '/api/v1/me/stats',
     ],
@@ -103,7 +104,16 @@ function createApp({ repository = createRepository(), notifier = createNotifier(
   }))
 
   app.post('/api/v1/me/records', asyncRoute(async (request, response) => {
-    const item = await repository.createFoodRecord(validateFoodRecordInput(request.body), openidFrom(request))
+    const input = validateFoodRecordInput(request.body)
+    const item = input.approvalId
+      ? await repository.recordApprovalFood(input, openidFrom(request))
+      : await repository.createFoodRecord(input, openidFrom(request))
+    response.status(201).json({ data: record(item) })
+  }))
+
+  app.post('/api/v1/me/records/:approvalId/food', asyncRoute(async (request, response) => {
+    const input = validateFoodRecordInput({ ...request.body, approvalId: request.params.approvalId })
+    const item = await repository.recordApprovalFood(input, openidFrom(request))
     response.status(201).json({ data: record(item) })
   }))
 

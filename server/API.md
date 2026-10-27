@@ -42,6 +42,7 @@
 | GET | `/api/v1/approvals/:approvalId` | 否 | 查询一张审批单 |
 | POST | `/api/v1/approvals` | 是 | 创建审批单，并创建发起人的个人记录 |
 | POST | `/api/v1/me/records` | 是 | 创建独立饮食记录 |
+| POST | `/api/v1/me/records/:approvalId/food` | 是 | 将已通过审批记录为已吃，更新原记录 |
 | POST | `/api/v1/approvals/:approvalId/votes` | 是 | 对待审批单投票 |
 | GET | `/api/v1/me/records` | 是 | 查询当前用户的饮食记录 |
 | GET | `/api/v1/me/stats` | 是 | 查询当前用户统计 |
@@ -216,3 +217,10 @@ CloudBase 使用三个集合：
 - `user_records`: `_openid + createdAt`、`approvalId + _openid`
 - `approval_votes`: `_id`
 
+
+
+### 从审批单记录已吃食物
+
+`POST /api/v1/me/records/:approvalId/food` 仅更新当前用户已通过审批的原个人记录，写入已确认的名称、热量和照片，并设置 `foodRecorded: true`；重复提交返回原记录，不新增记录。记录列表和保存响应均包含 `foodRecorded`，客户端据此将“吃了”替换为“已记录”。旧的 `POST /api/v1/me/records` 仍兼容带 `approvalId` 的请求，但客户端使用专用路径避免把审批结果误当成独立饮食记录。
+
+已有 MySQL 数据库在更新服务前需执行一次 `data/migrations/20261027-unified.sql`，补齐当前 schema 所需字段。CloudBase 无需结构迁移。

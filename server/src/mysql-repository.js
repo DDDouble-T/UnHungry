@@ -108,7 +108,7 @@ class MySQLRepository {
   }
 
   async listRecords(openid) {
-    const [rows] = await this.pool.execute('SELECT id AS _id, openid AS _openid, approvalId, title, calorie, status, checkinResult, image, createdAt, updatedAt FROM user_records WHERE openid = ? ORDER BY createdAt DESC LIMIT 100', [openid])
+    const [rows] = await this.pool.execute('SELECT id AS _id, openid AS _openid, approvalId, title, calorie, status, checkinResult, image, foodRecorded, createdAt, updatedAt FROM user_records WHERE openid = ? ORDER BY createdAt DESC LIMIT 100', [openid])
     return rows.map(recordRow)
   }
 
@@ -119,10 +119,28 @@ class MySQLRepository {
     return { _id: id, _openid: openid, title: input.title, calorie: input.calorie, image: input.image, status: 'logged', checkinResult: '', createdAt, updatedAt: createdAt }
   }
 
-  async checkIn(approvalId, result, openid) {
-    const [rows] = await this.pool.execute('SELECT id AS _id, openid AS _openid, approvalId, title, calorie, status, checkinResult, image, createdAt, updatedAt FROM user_records WHERE approvalId = ? AND openid = ? LIMIT 1', [approvalId, openid])
+  async recordApprovalFood(input, openid) {
+    const [rows] = await this.pool.execute('SELECT id AS _id, approvalId, title, calorie, status, checkinResult, image, foodRecorded, createdAt FROM user_records WHERE approvalId = ? AND openid = ? LIMIT 1', [input.approvalId, openid])
     const record = recordRow(rows[0])
     if (!record) throw notFound('没有找到这张审批单的个人记录')
+    if (record.foodRecorded) return record
+    if (record.checkinResult) throw conflict('RECORD_ALREADY_DECIDED', '这张审批单已经记录过结果')
+    if (record.status !== 'approved') throw conflict('RECORD_NOT_ALLOWED', '审批通过后才能添加食物')
+    const updatedAt = now()
+    await this.pool.execute('UPDATE user_records SET title = ?, calorie = ?, image = ?, foodRecorded = TRUE, updatedAt = ? WHERE id = ? AND openid = ? AND foodRecorded = FALSE', [input.title, input.calorie, input.image, updatedAt, record._id, openid])
+    const [updated] = await this.pool.execute('SELECT id AS _id, approvalId, title, calorie, status, checkinResult, image, foodRecorded, createdAt FROM user_records WHERE id = ? AND openid = ?', [record._id, openid])
+    return recordRow(updated[0])
+  }
+
+  async checkIn(approvalId, result, openid) {
+    const [rows] = await this.pool.execute('SELECT id AS _id, openid AS _openid, approvalId, title, calorie, status, checkinResult, image, foodRecorded, createdAt, updatedAt FROM user_records WHERE approvalId = ? AND openid = ? LIMIT 1', [approvalId, openid])
+    const record = recordRow(rows[0])
+    if (!record) throw notFound('没有找到这张审批单的个人记录')
+    if (record.foodRecorded) throw conflict('RECORD_ALREADY_DECIDED', '这张审批单已经记录为吃了')
+    if (record.checkinResult) {
+      if (record.checkinResult === result) return record
+      throw conflict('RECORD_ALREADY_DECIDED', '这张审批单已经记录过结果')
+    }
     if (record.status !== 'approved') throw conflict('CHECKIN_NOT_ALLOWED', '审批通过后才能打卡')
     const updatedAt = now()
     await this.pool.execute('UPDATE user_records SET checkinResult = ?, updatedAt = ? WHERE id = ?', [result, updatedAt, record._id])

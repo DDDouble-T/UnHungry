@@ -37,6 +37,7 @@ export interface ApiFood {
 export interface ApiRecord {
   id: string
   recordId?: string
+  foodRecorded?: boolean
   title: string
   time: string
   calorie: number | null
@@ -141,8 +142,18 @@ export function fetchStats() {
   return request<ApiStats>('/api/v1/me/stats')
 }
 
-export function createFoodRecord(input: { title: string; calorie?: number; image?: string }) {
+export function createFoodRecord(input: { title: string; calorie?: number; image?: string; approvalId?: string }) {
   return request<ApiRecord>('/api/v1/me/records', 'POST', input)
+}
+
+export async function recordApprovalFood(approvalId: string, input: { title: string; calorie?: number; image?: string }) {
+  try {
+    return await request<ApiRecord>(`/api/v1/me/records/${encodeURIComponent(approvalId)}/food`, 'POST', input)
+  } catch (error) {
+    // 兼容尚未部署新路由的旧云托管版本：打卡原审批，避免退回新增记录接口造成重复行。
+    if (error instanceof Error && error.message === '接口不存在') return checkIn(approvalId, '真香')
+    throw error
+  }
 }
 
 export function checkIn(approvalId: string, result: '真香' | '后悔') {

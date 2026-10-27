@@ -53,3 +53,23 @@ test('MySQL repository saves names and privacy flags with approval records', asy
   assert.deepEqual(insert.params.slice(1, 6), ['owner', '小明', 'cloud://avatars/me.jpg', false, '粥'])
   assert.equal((insert.sql.match(/\?/g) || []).length, insert.params.length)
 })
+
+
+test('MySQL recording updates the owned approval record once', async () => {
+  const row = { _id: 'record-1', approvalId: 'approval-1', status: 'approved', title: '米饭', calorie: 230, foodRecorded: 0 }
+  let writes = 0
+  const repository = new MySQLRepository({ async execute(sql, params) {
+    if (sql.startsWith('SELECT')) return [[{ ...row }]]
+    assert.match(sql, /WHERE id = \? AND openid = \? AND foodRecorded = FALSE/)
+    assert.equal(params[5], 'owner')
+    writes++
+    Object.assign(row, { title: params[0], calorie: params[1], image: params[2], foodRecorded: 1 })
+    return [{ affectedRows: 1 }]
+  } })
+  const input = { approvalId: 'approval-1', title: '半碗米饭', calorie: 115, image: '' }
+  const saved = await repository.recordApprovalFood(input, 'owner')
+  assert.equal(saved.foodRecorded, 1)
+  assert.equal(saved.calorie, 115)
+  await repository.recordApprovalFood(input, 'owner')
+  assert.equal(writes, 1)
+})

@@ -59,6 +59,7 @@ test('API metadata lists all business routes', async () => {
     '/api/v1/approvals/:approvalId',
     '/api/v1/approvals/:approvalId/votes',
     '/api/v1/me/records',
+    '/api/v1/me/records/:approvalId/food',
     '/api/v1/me/records/:approvalId/checkin',
     '/api/v1/me/stats',
   ])
@@ -109,10 +110,19 @@ test('approval flow creates a record, closes after vote and supports check-in', 
   const checkin = await request(`/api/v1/me/records/${approvalId}/checkin`, {
     method: 'POST',
     headers: owner,
-    body: JSON.stringify({ result: '真香' }),
+    body: JSON.stringify({ result: '后悔' }),
   })
   assert.equal(checkin.response.status, 200)
-  assert.equal(checkin.body.data.checkinResult, '真香')
+  assert.equal(checkin.body.data.checkinResult, '后悔')
+  assert.equal(checkin.body.data.id, approvalId)
+  const finalRecords = await request('/api/v1/me/records', { headers: owner })
+  assert.equal(finalRecords.body.data.length, 1)
+  assert.equal(finalRecords.body.data[0].id, approvalId)
+  assert.equal(finalRecords.body.data[0].checkinResult, '后悔')
+  const changedDecision = await request(`/api/v1/me/records/${approvalId}/checkin`, {
+    method: 'POST', headers: owner, body: JSON.stringify({ result: '真香' }),
+  })
+  assert.equal(changedDecision.response.status, 409)
 })
 
 test('food search and independent food records are served by the backend', async () => {
@@ -245,4 +255,35 @@ test('avatar input rejects invalid types and oversize values', async () => {
     })
     assert.equal(result.response.status, 400)
   }
+})
+
+test('recording approval food persists on the original record and cannot be repeated', async () => {
+  const owner = { 'x-dev-openid': 'approval-food-owner' }
+  const created = await request('/api/v1/approvals', {
+    method: 'POST', headers: owner,
+    body: JSON.stringify({ title: '米饭', calorie: 230, reason: '饿了' }),
+  })
+  const approvalId = created.body.data.id
+  const input = { title: '半碗米饭', calorie: 115, image: 'cloud://rice' }
+  const save = headers => request(`/api/v1/me/records/${approvalId}/food`, { method: 'POST', headers, body: JSON.stringify(input) })
+  assert.equal((await save(owner)).response.status, 409)
+  await request(`/api/v1/approvals/${approvalId}/votes`, {
+    method: 'POST', headers: { 'x-dev-openid': 'approval-food-voter' },
+    body: JSON.stringify({ choice: 'approve', reason: '可以吃' }),
+  })
+  assert.equal((await save({ 'x-dev-openid': 'other-owner' })).response.status, 404)
+  const saved = await save(owner)
+  assert.equal(saved.response.status, 201)
+  assert.equal(saved.body.data.foodRecorded, true)
+  assert.equal(saved.body.data.id, approvalId)
+  assert.equal(saved.body.data.title, '半碗米饭')
+  assert.equal(saved.body.data.calorie, 115)
+  await save(owner)
+  const listed = await request('/api/v1/me/records', { headers: owner })
+  assert.equal(listed.body.data.length, 1)
+  assert.equal(listed.body.data[0].id, approvalId)
+  assert.equal(listed.body.data[0].foodRecorded, true)
+  const stats = await request('/api/v1/me/stats', { headers: owner })
+  assert.equal(stats.body.data.todayCalories, 115)
+  assert.equal(stats.body.data.submittedCount, 1)
 })

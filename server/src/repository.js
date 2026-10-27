@@ -188,9 +188,25 @@ class MemoryRepository {
     return record
   }
 
+  async recordApprovalFood(input, openid) {
+    const record = [...this.records.values()].find(item => item.approvalId === input.approvalId && item._openid === openid)
+    if (!record) throw notFound('没有找到这张审批单的个人记录')
+    if (record.foodRecorded) return record
+    if (record.checkinResult) throw conflict('RECORD_ALREADY_DECIDED', '这张审批单已经记录过结果')
+    if (record.status !== 'approved') throw conflict('RECORD_NOT_ALLOWED', '审批通过后才能添加食物')
+    // 更新原记录，避免同一顿食物生成两条记录、重复计算热量。
+    Object.assign(record, { title: input.title, calorie: input.calorie, image: input.image, foodRecorded: true, updatedAt: now() })
+    return record
+  }
+
   async checkIn(approvalId, result, openid) {
     const record = [...this.records.values()].find(item => item.approvalId === approvalId && item._openid === openid)
     if (!record) throw notFound('没有找到这张审批单的个人记录')
+    if (record.foodRecorded) throw conflict('RECORD_ALREADY_DECIDED', '这张审批单已经记录为吃了')
+    if (record.checkinResult) {
+      if (record.checkinResult === result) return record
+      throw conflict('RECORD_ALREADY_DECIDED', '这张审批单已经记录过结果')
+    }
     if (record.status !== 'approved') throw conflict('CHECKIN_NOT_ALLOWED', '审批通过后才能打卡')
     record.checkinResult = result
     record.updatedAt = now()
@@ -314,10 +330,27 @@ class CloudBaseRepository {
     return record
   }
 
+  async recordApprovalFood(input, openid) {
+    const query = await this.collection(COLLECTIONS.records).where({ approvalId: input.approvalId, _openid: openid }).limit(1).get()
+    const record = query.data && query.data[0]
+    if (!record) throw notFound('没有找到这张审批单的个人记录')
+    if (record.foodRecorded) return record
+    if (record.checkinResult) throw conflict('RECORD_ALREADY_DECIDED', '这张审批单已经记录过结果')
+    if (record.status !== 'approved') throw conflict('RECORD_NOT_ALLOWED', '审批通过后才能添加食物')
+    const update = { title: input.title, calorie: input.calorie, image: input.image, foodRecorded: true, updatedAt: now() }
+    await this.collection(COLLECTIONS.records).doc(record._id).update(update)
+    return { ...record, ...update }
+  }
+
   async checkIn(approvalId, result, openid) {
     const query = await this.collection(COLLECTIONS.records).where({ approvalId, _openid: openid }).limit(1).get()
     const record = query.data && query.data[0]
     if (!record) throw notFound('没有找到这张审批单的个人记录')
+    if (record.foodRecorded) throw conflict('RECORD_ALREADY_DECIDED', '这张审批单已经记录为吃了')
+    if (record.checkinResult) {
+      if (record.checkinResult === result) return record
+      throw conflict('RECORD_ALREADY_DECIDED', '这张审批单已经记录过结果')
+    }
     if (record.status !== 'approved') throw conflict('CHECKIN_NOT_ALLOWED', '审批通过后才能打卡')
     const updatedAt = now()
     await this.collection(COLLECTIONS.records).doc(record._id).update({ checkinResult: result, updatedAt })

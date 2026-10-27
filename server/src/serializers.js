@@ -37,6 +37,7 @@ function record(item) {
     status: item.status,
     statusLabel: STATUS_LABELS[item.status],
     checkinResult: item.checkinResult || '',
+    foodRecorded: Boolean(item.foodRecorded),
   }
 }
 

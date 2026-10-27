@@ -63,6 +63,7 @@ function validateApprovalInput(input) {
 function validateFoodRecordInput(input) {
   const body = bodyObject(input)
   return {
+    ...(body.approvalId !== undefined ? { approvalId: id(body.approvalId, 'approvalId') } : {}),
     title: text(body.title ?? body.foodName, '食物名称', { required: true, max: 40 }),
     calorie: number(body.calorie, '热量', { min: 0, max: 10000 }),
     image: text(body.image, '食物照片', { max: 2048 }),

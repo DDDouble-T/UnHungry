@@ -80,6 +80,15 @@ test('CloudBase repository uses Node SDK writes and keeps records in sync', asyn
   const records = await repository.listRecords('owner-1')
   assert.equal(records.length, 1)
   assert.equal(records[0].status, 'approved')
+  const input = { approvalId: created._id, title: '半份豆花', calorie: 90, image: 'cloud://food' }
+  await assert.rejects(() => repository.recordApprovalFood(input, 'other-owner'))
+  await repository.recordApprovalFood(input, 'owner-1')
+  await repository.recordApprovalFood({ ...input, calorie: 999 }, 'owner-1')
+  const recorded = await repository.listRecords('owner-1')
+  assert.equal(recorded.length, 1)
+  assert.equal(recorded[0].foodRecorded, true)
+  assert.equal(recorded[0].calorie, 90)
+
 
   await assert.rejects(
     () => repository.createVote(created._id, { choice: 'approve', reason: '重复投票' }, 'voter-1'),

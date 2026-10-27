@@ -1,5 +1,5 @@
 import { requestApprovalSubscription } from '../../config'
-import { ApiApproval, ApiFood, ApiRecord, ApiStats, checkIn as submitCheckIn, createApproval, createApprovalVote, createFoodRecord, fetchApproval, fetchApprovals, fetchFoods, fetchRecords, fetchStats, isApiConfigured, resolveApprovalImages, resolveImageUrls, uploadApprovalImage, uploadAuthorAvatar } from '../../utils/api'
+import { ApiApproval, ApiFood, ApiRecord, ApiStats, checkIn as submitCheckIn, createApproval, createApprovalVote, createFoodRecord, fetchApproval, fetchApprovals, fetchFoods, fetchRecords, fetchStats, isApiConfigured, recordApprovalFood as submitApprovalFood, resolveApprovalImages, resolveImageUrls, uploadApprovalImage, uploadAuthorAvatar } from '../../utils/api'
 
 type TabKey = 'square' | 'apply' | 'record' | 'me'
 type FilterKey = 'all' | 'pending' | 'approved' | 'rejected'
@@ -68,6 +68,8 @@ interface ApprovalForm {
 
 interface MyRecord {
   id: string
+  isApproval: boolean
+  foodRecorded: boolean
   title: string
   time: string
   calorie: string
@@ -105,12 +107,14 @@ function mapFood(food: ApiFood): FoodSuggestion {
 function mapApiRecord(item: ApiRecord): MyRecord {
   return {
     id: item.id,
+    isApproval: Boolean(item.recordId),
+    foodRecorded: Boolean(item.foodRecorded),
     title: item.title,
     time: item.time ? relativeTime(item.time) : '',
     calorie: item.calorie === null || item.calorie === undefined ? '待估算' : String(item.calorie),
     status: item.status,
     statusLabel: item.statusLabel,
-    checkinResult: item.checkinResult || '',
+    checkinResult: item.checkinResult === '真香' ? '已记录' : item.checkinResult === '后悔' ? '忍住了，真棒' : item.checkinResult || '',
   }
 }
 
@@ -148,6 +152,10 @@ Component({
     calorieHint: '',
     calorieSource: 'manual' as CalorieSource,
     uploadedImage: '',
+    uploadedImageSource: '',
+    recordPrefillId: '',
+    recordActionId: '',
+    recordApprovalId: '',
     myRecords: [] as MyRecord[],
     shareTargetId: '',
     shareAnchor: '',
@@ -381,6 +389,34 @@ Component({
       this.resetForm()
       this.setData({ activeTab: 'record' as TabKey, formFocusAnchor: 'form-field-foodName' })
     },
+    async recordApprovalFood(e: any) {
+      if (this.data.recordPrefillId) return
+      const id = String(e.currentTarget.dataset.id || '')
+      const record = (this.data.myRecords as MyRecord[]).find(item => item.id === id && item.isApproval && !item.foodRecorded && !item.checkinResult)
+      if (!record) return
+      this.setData({ recordPrefillId: id })
+      try {
+        // 单独读取原审批，避免广场分页或图片临时 URL 丢失已知内容。
+        const approval = await fetchApproval(id)
+        const [preview] = await resolveApprovalImages([approval])
+        if (this.data.activeTab !== 'me') return
+        this.resetForm()
+        this.setData({
+          recordApprovalId: id,
+          activeTab: 'record' as TabKey,
+          formFocusAnchor: 'form-field-foodName',
+          'form.foodName': approval.title,
+          'form.calorie': approval.calorie === null || approval.calorie === undefined ? '' : String(approval.calorie),
+          uploadedImage: preview.image || '',
+          uploadedImageSource: approval.image || '',
+        })
+      } catch (error) {
+        console.warn('prefill approval food failed', error)
+        wx.showToast({ title: '读取审批单失败，请重试', icon: 'none' })
+      } finally {
+        this.setData({ recordPrefillId: '' })
+      }
+    },
     openFriends() { wx.showToast({ title: '亲友群审批即将开放', icon: 'none' }) },
     prepareTimelineShare(e: any) {
       const id = String(e.currentTarget.dataset.id || '')
@@ -514,7 +550,7 @@ Component({
       this.setData({ formFocusAnchor: `form-field-${field}` })
     },
     chooseImage() {
-      wx.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'], success: res => this.setData({ uploadedImage: res.tempFilePaths[0] }) })
+      wx.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'], success: res => this.setData({ uploadedImage: res.tempFilePaths[0], uploadedImageSource: '' }) })
     },
     async submitApproval() {
       if (this.data.approvalSubmitting) return
@@ -530,7 +566,7 @@ Component({
       try {
         await requestApprovalSubscription()
         const imagePath = this.data.uploadedImage as string
-        const image = imagePath ? await uploadApprovalImage(imagePath) : ''
+        const image = this.data.uploadedImageSource || (imagePath ? await uploadApprovalImage(imagePath) : '')
         const item = await createApproval({
           authorName: form.isAnonymous ? '' : form.authorName.trim(),
           authorAvatar: form.isAnonymous ? '' : form.authorAvatar,
@@ -545,7 +581,7 @@ Component({
         })
         const approval = this.mapApiApproval({ ...item, authorAvatar: form.isAnonymous ? '' : this.data.avatarPreview, image: imagePath || item.image })
         const approvals = [approval, ...(this.data.approvals as Approval[])]
-        this.setData({ approvals, filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey), filterCounts: this.getFilterCounts(approvals), form: blankForm(), uploadedImage: '', foodSuggestions: [], foodMatchHint: '', selectedFoodId: '', selectedFood: null, portionOptions: [], portionIndex: 0, calorieHint: '', calorieSource: 'manual' as CalorieSource, activeTab: 'square' as TabKey, formFocusAnchor: '', keyboardHeight: 0, pageScrollStyle: '' })
+        this.setData({ approvals, filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey), filterCounts: this.getFilterCounts(approvals), form: blankForm(), uploadedImage: '', uploadedImageSource: '', foodSuggestions: [], foodMatchHint: '', selectedFoodId: '', selectedFood: null, portionOptions: [], portionIndex: 0, calorieHint: '', calorieSource: 'manual' as CalorieSource, activeTab: 'square' as TabKey, formFocusAnchor: '', keyboardHeight: 0, pageScrollStyle: '' })
         await this.loadData()
         wx.showToast({ title: '审批单已发出', icon: 'success' })
       } catch (error) {
@@ -557,7 +593,7 @@ Component({
     },
     resetForm() {
       foodSearchRequestId += 1
-      this.setData({ form: blankForm(), uploadedImage: '', foodSuggestions: [], foodMatchHint: '', selectedFoodId: '', selectedFood: null, portionOptions: [], portionIndex: 0, calorieHint: '', calorieSource: 'manual' as CalorieSource })
+      this.setData({ recordApprovalId: '', form: blankForm(), uploadedImage: '', uploadedImageSource: '', foodSuggestions: [], foodMatchHint: '', selectedFoodId: '', selectedFood: null, portionOptions: [], portionIndex: 0, calorieHint: '', calorieSource: 'manual' as CalorieSource })
     },
     async saveFoodRecord() {
       if (this.data.recordSubmitting) return
@@ -570,11 +606,38 @@ Component({
       this.setData({ recordSubmitting: true })
       try {
         const imagePath = this.data.uploadedImage as string
-        const image = imagePath ? await uploadApprovalImage(imagePath) : ''
-        await createFoodRecord({ title: foodName, ...(calorie ? { calorie: Number(calorie) } : {}), image })
+        const image = this.data.uploadedImageSource || (imagePath ? await uploadApprovalImage(imagePath) : '')
+        const approvalId = this.data.recordApprovalId
+        const saved = approvalId
+          ? await submitApprovalFood(approvalId, { title: foodName, ...(calorie ? { calorie: Number(calorie) } : {}), image })
+          : await createFoodRecord({ title: foodName, ...(calorie ? { calorie: Number(calorie) } : {}), image })
+        if (approvalId) {
+          const updated = mapApiRecord(saved)
+          updated.isApproval = true
+          updated.foodRecorded = true
+          // 旧服务只返回审批原记录；本次表单内容仍先用于当前页面展示，部署新服务后会持久化。
+          updated.title = foodName
+          updated.calorie = calorie || updated.calorie
+          this.setData({ myRecords: (this.data.myRecords as MyRecord[]).map(record => record.id === approvalId ? updated : record) })
+        }
         this.resetForm()
         this.setData({ activeTab: 'me' as TabKey, formFocusAnchor: '', keyboardHeight: 0, pageScrollStyle: '' })
-        await this.loadData()
+        // 保存接口已返回原审批记录，避免立即拉取旧缓存把按钮状态回滚。
+        try {
+          const stats = await fetchStats()
+          this.setData({
+            todayCalories: stats.todayCalories,
+            calorieQuota: stats.calorieQuota,
+            quotaPercent: stats.calorieQuota ? Math.min(100, Math.round(stats.todayCalories / stats.calorieQuota * 100)) : 0,
+            savedCalories: stats.savedCalories,
+            approvalRate: stats.approvalRate,
+            approvedCount: stats.approvedCount,
+            submittedCount: stats.submittedCount,
+            topRejected: stats.topRejected,
+          })
+        } catch (statsError) {
+          console.warn('refresh stats after food record failed', statsError)
+        }
         wx.showToast({ title: '已添加到今日记录', icon: 'success' })
       } catch (error) {
         console.warn('save food record failed', error)
@@ -584,8 +647,10 @@ Component({
       }
     },
     async checkIn(e: any) {
+      if (this.data.recordActionId) return
       const result = e.currentTarget.dataset.result as '真香' | '后悔'
       const id = String(e.currentTarget.dataset.id || '')
+      this.setData({ recordActionId: id })
       try {
         const updated = mapApiRecord(await submitCheckIn(id, result))
         const myRecords = (this.data.myRecords as MyRecord[]).map(record => record.id === id ? updated : record)
@@ -594,6 +659,8 @@ Component({
       } catch (error) {
         console.warn('check in failed', error)
         wx.showToast({ title: error instanceof Error ? error.message : '打卡失败，请稍后重试', icon: 'none' })
+      } finally {
+        this.setData({ recordActionId: '' })
       }
     },
   },

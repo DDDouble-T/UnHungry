@@ -43,6 +43,7 @@ CREATE TABLE user_records (
   image VARCHAR(2048) NOT NULL DEFAULT '',
   status ENUM('pending', 'approved', 'rejected', 'logged') NOT NULL,
   checkinResult VARCHAR(16) NOT NULL DEFAULT '',
+  foodRecorded BOOLEAN NOT NULL DEFAULT FALSE,
   createdAt DATETIME(3) NOT NULL,
   updatedAt DATETIME(3) NOT NULL,
   INDEX idx_records_openid_createdAt (openid, createdAt),
