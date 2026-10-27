@@ -52,6 +52,14 @@ class MySQLRepository {
     return searchFoods(keyword, limit)
   }
 
+  async listApprovalMessages(openid, limit = 10) {
+    const [rows] = await this.pool.execute(
+      'SELECT v.id AS _id, v.approvalId, v.reason, v.createdAt FROM approval_votes v INNER JOIN approvals a ON a.id = v.approvalId ORDER BY CASE WHEN a.openid = ? THEN 0 ELSE 1 END, v.createdAt DESC LIMIT ?',
+      [openid, Number(limit)],
+    )
+    return rows
+  }
+
   async getApproval(approvalId) {
     const [rows] = await this.pool.execute('SELECT * FROM approvals WHERE id = ?', [approvalId])
     const item = approvalRow(rows[0])
@@ -90,6 +98,7 @@ class MySQLRepository {
       const [rows] = await connection.execute('SELECT * FROM approvals WHERE id = ? FOR UPDATE', [approvalId])
       const approval = approvalRow(rows[0])
       if (!approval) throw notFound('审批单不存在')
+      if (approval._openid === openid) throw conflict('SELF_VOTE_NOT_ALLOWED', '不能给自己发起的审批投票')
       if (approval.status !== 'pending') throw conflict('APPROVAL_CLOSED', '这张审批单已经完成审批')
       const support = approval.support + (input.choice === 'approve' ? 1 : 0)
       const against = approval.against + (input.choice === 'wait' ? 1 : 0)

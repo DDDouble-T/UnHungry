@@ -53,4 +53,12 @@ function stats(value) {
   }
 }
 
-module.exports = { STATUS_LABELS, approval, record, stats }
+function approvalMessage(item) {
+  return {
+    id: item._id || item.id,
+    text: item.reason || item.text || '',
+    createdAt: item.createdAt,
+  }
+}
+
+module.exports = { STATUS_LABELS, approval, approvalMessage, record, stats }

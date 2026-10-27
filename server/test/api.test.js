@@ -62,6 +62,7 @@ test('API metadata lists all business routes', async () => {
     '/api/v1/me/records/:approvalId/food',
     '/api/v1/me/records/:approvalId/checkin',
     '/api/v1/me/stats',
+    '/api/v1/me/approval-messages',
   ])
 })
 
@@ -83,6 +84,14 @@ test('approval flow creates a record, closes after vote and supports check-in', 
   assert.equal(recordsBody.data.length, 1)
   assert.equal(recordsBody.data[0].status, 'pending')
 
+  const selfVote = await request(`/api/v1/approvals/${approvalId}/votes`, {
+    method: 'POST',
+    headers: owner,
+    body: JSON.stringify({ choice: 'approve', reason: '我觉得可以' }),
+  })
+  assert.equal(selfVote.response.status, 409)
+  assert.equal(selfVote.body.error.code, 'SELF_VOTE_NOT_ALLOWED')
+
   const { response: voteResponse, body: voteBody } = await request(`/api/v1/approvals/${approvalId}/votes`, {
     method: 'POST',
     headers: voter,
@@ -95,6 +104,24 @@ test('approval flow creates a record, closes after vote and supports check-in', 
   assert.equal(notifications[0].openid, 'owner-1')
   assert.equal(notifications[0].approval._id, approvalId)
   assert.equal(notifications[0].choice, 'approve')
+
+  const messages = await request('/api/v1/me/approval-messages?limit=10', { headers: owner })
+  assert.equal(messages.response.status, 200)
+  assert.equal(messages.body.data[0].text, '偶尔吃一次没问题')
+  assert.ok(messages.body.data[0].id)
+
+  const otherApproval = await request('/api/v1/approvals', {
+    method: 'POST',
+    headers: { 'x-dev-openid': 'other-owner' },
+    body: JSON.stringify({ title: '奶茶', reason: '想喝点甜的' }),
+  })
+  await request(`/api/v1/approvals/${otherApproval.body.data.id}/votes`, {
+    method: 'POST',
+    headers: { 'x-dev-openid': 'new-voter' },
+    body: JSON.stringify({ choice: 'wait', reason: '刚吃完饭先缓缓' }),
+  })
+  const prioritizedMessages = await request('/api/v1/me/approval-messages?limit=10', { headers: owner })
+  assert.equal(prioritizedMessages.body.data[0].text, '偶尔吃一次没问题')
 
   const duplicate = await request(`/api/v1/approvals/${approvalId}/votes`, {
     method: 'POST',

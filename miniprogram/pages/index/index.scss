@@ -34,7 +34,6 @@ page { min-height: 100vh; background: #f4f7f8; color: #24353e; font-family: -app
 .approval-card { margin-bottom: 24rpx; padding: 28rpx; border: 1rpx solid #e2eaec; border-radius: 27rpx; background: #fff; box-shadow: 0 11rpx 25rpx rgba(56, 78, 86, .05); }
 .approval-card.share-selected { border-color: #8baeb5; box-shadow: 0 0 0 2rpx rgba(103, 145, 154, .12); }
 .approval-head { display: flex; align-items: center; }
-.food-token { display: flex; align-items: center; justify-content: center; flex: 0 0 78rpx; width: 78rpx; height: 78rpx; margin-right: 18rpx; border-radius: 23rpx; background: #edf4f4; font-size: 44rpx; }
 .approval-heading { min-width: 0; flex: 1; }
 .approval-title-row { display: flex; align-items: center; }
 .approval-title { max-width: 300rpx; overflow: hidden; color: #2d424b; font-size: 30rpx; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
@@ -70,6 +69,7 @@ button::after { border: 0; }
 .approve-button { background: #6c9896; color: #fff; }
 .button-mark { margin-left: 10rpx; font-size: 31rpx; }
 .result-note { display: flex; justify-content: space-between; margin-top: 23rpx; padding-top: 19rpx; border-top: 1rpx solid #eef1f1; font-size: 23rpx; }
+.result-pending { color: #d8825f; }
 .result-approved { color: #669585; }
 .result-rejected { color: #858ba2; }
 .result-note text:last-child { color: #a7b2b5; }
@@ -80,6 +80,12 @@ button::after { border: 0; }
 .empty-state { display: flex; flex-direction: column; align-items: center; padding: 100rpx 0; color: #9eafb4; font-size: 24rpx; }
 .empty-icon { margin-bottom: 15rpx; color: #b6c8cc; font-size: 58rpx; }
 .bottom-space { height: 40rpx; }
+.barrage-wrap { position: fixed; bottom: calc(142rpx + env(safe-area-inset-bottom)); left: 28rpx; z-index: 11; width: 520rpx; height: 560rpx; pointer-events: none; }
+.barrage-bubble { position: absolute; bottom: 0; left: 0; display: flex; align-items: center; max-width: 500rpx; padding: 15rpx 22rpx 15rpx 17rpx; border: 1rpx solid; border-radius: 28rpx 28rpx 28rpx 8rpx; box-shadow: 0 10rpx 28rpx rgba(74, 103, 111, .13); animation: barrage-float 10s linear both; }
+.barrage-bubble::after { position: absolute; bottom: -8rpx; left: 24rpx; width: 16rpx; height: 16rpx; background: inherit; content: ''; transform: rotate(45deg); }
+.barrage-mark { flex: 0 0 auto; margin-right: 9rpx; font-size: 25rpx; line-height: 1; }
+.barrage-text { overflow: hidden; font-size: 23rpx; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes barrage-float { 0% { opacity: 0; transform: translate3d(0, 32rpx, 0) scale(.94); } 12% { opacity: .96; transform: translate3d(0, 0, 0) scale(1); } 68% { opacity: .8; transform: translate3d(0, -280rpx, 0) scale(.98); } 86% { opacity: .32; transform: translate3d(0, -440rpx, 0) scale(.95); } 100% { opacity: 0; transform: translate3d(0, -560rpx, 0) scale(.9); } }
 .page-heading { padding-bottom: 37rpx; }
 .form-card { margin: 0 40rpx; padding: 30rpx; border: 1rpx solid #e0e9ea; border-radius: 27rpx; background: #fff; box-shadow: 0 11rpx 25rpx rgba(56, 78, 86, .05); }
 .form-section-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28rpx; color: #2e444c; font-size: 32rpx; font-weight: 700; }

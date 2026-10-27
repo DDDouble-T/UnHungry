@@ -56,6 +56,12 @@ export interface ApiStats {
   topRejected: string
 }
 
+export interface ApiApprovalMessage {
+  id: string
+  text: string
+  createdAt: string
+}
+
 interface ApiResponse<T> {
   data?: T
   error?: { message?: string }
@@ -140,6 +146,10 @@ export function fetchRecords() {
 
 export function fetchStats() {
   return request<ApiStats>('/api/v1/me/stats')
+}
+
+export function fetchApprovalMessages() {
+  return request<ApiApprovalMessage[]>('/api/v1/me/approval-messages?limit=10')
 }
 
 export function createFoodRecord(input: { title: string; calorie?: number; image?: string; approvalId?: string }) {

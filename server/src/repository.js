@@ -126,6 +126,20 @@ class MemoryRepository {
     return searchFoods(keyword, limit)
   }
 
+  async listApprovalMessages(openid, limit = 10) {
+    const ownApprovalIds = new Set([...this.approvals.values()]
+      .filter(item => item._openid === openid)
+      .map(item => item._id))
+    const sortByTime = (left, right) => String(right.createdAt).localeCompare(String(left.createdAt))
+    const ownMessages = [...this.votes.values()]
+      .filter(item => ownApprovalIds.has(item.approvalId))
+      .sort(sortByTime)
+    const otherMessages = [...this.votes.values()]
+      .filter(item => !ownApprovalIds.has(item.approvalId))
+      .sort(sortByTime)
+    return [...ownMessages, ...otherMessages].slice(0, limit)
+  }
+
   async getApproval(approvalId) {
     const item = this.approvals.get(approvalId)
     if (!item) throw notFound('审批单不存在')
@@ -157,6 +171,7 @@ class MemoryRepository {
 
   async createVote(approvalId, input, openid) {
     const approval = await this.getApproval(approvalId)
+    if (approval._openid === openid) throw conflict('SELF_VOTE_NOT_ALLOWED', '不能给自己发起的审批投票')
     // 复合键同时承担幂等约束：同一用户对同一审批单只能产生一票。
     const voteId = `${approvalId}:${openid}`
     if (this.votes.has(voteId)) throw conflict('DUPLICATE_VOTE', '你已经投过这张审批单')
@@ -245,6 +260,16 @@ class CloudBaseRepository {
     return searchFoods(keyword, limit)
   }
 
+  async listApprovalMessages(openid, limit = 10) {
+    const ownApprovals = await this.listApprovals({ status: 'all', limit: 100 })
+    const ownApprovalIds = new Set(ownApprovals.filter(item => item._openid === openid).map(item => item._id))
+    const result = await this.collection(COLLECTIONS.votes).orderBy('createdAt', 'desc').limit(100).get()
+    const messages = result.data || []
+    const ownMessages = messages.filter(item => ownApprovalIds.has(item.approvalId))
+    const otherMessages = messages.filter(item => !ownApprovalIds.has(item.approvalId))
+    return [...ownMessages, ...otherMessages].slice(0, limit)
+  }
+
   async getApproval(approvalId) {
     const item = cloudData(await this.collection(COLLECTIONS.approvals).doc(approvalId).get())
     if (!item) throw notFound('审批单不存在')
@@ -286,6 +311,7 @@ class CloudBaseRepository {
       if (existing) throw conflict('DUPLICATE_VOTE', '你已经投过这张审批单')
       const approval = cloudData(await approvalCollection.doc(approvalId).get())
       if (!approval) throw notFound('审批单不存在')
+      if (approval._openid === openid) throw conflict('SELF_VOTE_NOT_ALLOWED', '不能给自己发起的审批投票')
       if (approval.status !== 'pending') throw conflict('APPROVAL_CLOSED', '这张审批单已经完成审批')
       const support = approval.support + (input.choice === 'approve' ? 1 : 0)
       const against = approval.against + (input.choice === 'wait' ? 1 : 0)
@@ -305,6 +331,7 @@ class CloudBaseRepository {
     const existing = cloudData(await this.collection(COLLECTIONS.votes).doc(voteId).get())
     if (existing) throw conflict('DUPLICATE_VOTE', '你已经投过这张审批单')
     const approval = await this.getApproval(approvalId)
+    if (approval._openid === openid) throw conflict('SELF_VOTE_NOT_ALLOWED', '不能给自己发起的审批投票')
     if (approval.status !== 'pending') throw conflict('APPROVAL_CLOSED', '这张审批单已经完成审批')
     const support = approval.support + (input.choice === 'approve' ? 1 : 0)
     const against = approval.against + (input.choice === 'wait' ? 1 : 0)

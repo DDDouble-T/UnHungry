@@ -3,7 +3,7 @@ const crypto = require('node:crypto')
 const { createRepository } = require('./repository')
 const { createNotifier } = require('./notifications')
 const { HttpError, notFound, unauthorized } = require('./errors')
-const { approval, record, stats } = require('./serializers')
+const { approval, approvalMessage, record, stats } = require('./serializers')
 const {
   validateApprovalInput,
   validateFoodRecordInput,
@@ -54,6 +54,7 @@ function createApp({ repository = createRepository(), notifier = createNotifier(
       '/api/v1/me/records/:approvalId/food',
       '/api/v1/me/records/:approvalId/checkin',
       '/api/v1/me/stats',
+      '/api/v1/me/approval-messages',
     ],
   } }))
 
@@ -119,6 +120,14 @@ function createApp({ repository = createRepository(), notifier = createNotifier(
 
   app.get('/api/v1/me/stats', asyncRoute(async (request, response) => {
     response.json({ data: stats(await repository.getStats(openidFrom(request))) })
+  }))
+
+  // 首页弹幕优先展示当前用户审批单收到的留言，再用全站最新留言补齐；只返回文案和时间，不暴露投票人身份。
+  app.get('/api/v1/me/approval-messages', asyncRoute(async (request, response) => {
+    const items = typeof repository.listApprovalMessages === 'function'
+      ? await repository.listApprovalMessages(openidFrom(request), Math.min(10, limit(request.query.limit)))
+      : []
+    response.json({ data: items.map(approvalMessage) })
   }))
 
   // 打卡必须绑定当前用户自己的记录，并由 repository 校验审批已通过。

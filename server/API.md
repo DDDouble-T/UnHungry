@@ -11,6 +11,7 @@
 - 审批状态变化后，发起人的个人记录同步变化。
 - 食物热量检索和独立饮食记录的持久化。
 - 当前用户的审批记录和统计数据。
+- 首页弹幕留言按“当前用户收到的留言优先、全站最新留言补齐”返回最多十条文案。
 - 只有审批通过的记录才允许打卡，且打卡结果只能是 `真香` 或 `后悔`。
 - 请求身份识别、参数校验、错误码和请求追踪 ID。
 
@@ -46,6 +47,7 @@
 | POST | `/api/v1/approvals/:approvalId/votes` | 是 | 对待审批单投票 |
 | GET | `/api/v1/me/records` | 是 | 查询当前用户的饮食记录 |
 | GET | `/api/v1/me/stats` | 是 | 查询当前用户统计 |
+| GET | `/api/v1/me/approval-messages` | 是 | 查询首页弹幕用的审批理由留言 |
 | POST | `/api/v1/me/records/:approvalId/checkin` | 是 | 对已通过的审批记录打卡 |
 
 ### 3.1 健康和版本
@@ -173,7 +175,13 @@ against > support        => rejected
 
 通过率、提交数、通过数和最常被拒绝食物只统计审批记录；今日热量会汇总当前用户当天的审批和独立饮食记录，被拒绝最多按被拒绝审批记录的食物名称统计。
 
-### 3.7 审批后打卡
+### 3.7 首页审批留言弹幕
+
+`GET /api/v1/me/approval-messages?limit=10`
+
+返回当前用户首页弹幕使用的审批理由留言。服务端先取当前用户发起的审批单收到的留言，再按留言时间倒序补齐其他审批留言，最多返回十条；仅返回 `id`、`text` 和 `createdAt`，不暴露投票人身份。小程序端在不足十条时补充固定的网感文案。
+
+### 3.8 审批后打卡
 
 `POST /api/v1/me/records/:approvalId/checkin`
 
@@ -199,6 +207,7 @@ against > support        => rejected
 | 401 | `AUTH_REQUIRED` | 生产环境没有用户身份 |
 | 404 | `NOT_FOUND` | 路由或审批/记录不存在 |
 | 409 | `DUPLICATE_VOTE` | 当前用户已经投过该审批单 |
+| 409 | `SELF_VOTE_NOT_ALLOWED` | 当前用户不能给自己发起的审批投票 |
 | 409 | `APPROVAL_CLOSED` | 审批单已经结束 |
 | 409 | `CHECKIN_NOT_ALLOWED` | 审批未通过，不能打卡 |
 | 413 | `PAYLOAD_TOO_LARGE` | 请求体超过 64KB |

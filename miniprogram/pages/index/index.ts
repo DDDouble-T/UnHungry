@@ -1,8 +1,8 @@
 import { requestApprovalSubscription } from '../../config'
-import { ApiApproval, ApiFood, ApiRecord, ApiStats, checkIn as submitCheckIn, createApproval, createApprovalVote, createFoodRecord, fetchApproval, fetchApprovals, fetchFoods, fetchRecords, fetchStats, isApiConfigured, recordApprovalFood as submitApprovalFood, resolveApprovalImages, resolveImageUrls, uploadApprovalImage, uploadAuthorAvatar } from '../../utils/api'
+import { ApiApproval, ApiApprovalMessage, ApiFood, ApiRecord, ApiStats, checkIn as submitCheckIn, createApproval, createApprovalVote, createFoodRecord, fetchApproval, fetchApprovalMessages, fetchApprovals, fetchFoods, fetchRecords, fetchStats, isApiConfigured, recordApprovalFood as submitApprovalFood, resolveApprovalImages, resolveImageUrls, uploadApprovalImage, uploadAuthorAvatar } from '../../utils/api'
 
 type TabKey = 'square' | 'apply' | 'record' | 'me'
-type FilterKey = 'all' | 'pending' | 'approved' | 'rejected'
+type FilterKey = 'all' | 'mine' | 'approved' | 'rejected'
 type Status = 'pending' | 'approved' | 'rejected'
 type RecordStatus = Status | 'logged'
 type VoteChoice = 'approve' | 'wait'
@@ -35,6 +35,7 @@ interface Approval {
   authorName: string
   authorAvatar: string
   status: Status
+  isMine: boolean
   statusLabel: string
   title: string
   price: string
@@ -78,6 +79,20 @@ interface MyRecord {
   checkinResult: string
 }
 
+interface BarrageMessage {
+  id: string
+  text: string
+  createdAt: string
+}
+
+interface BarrageItem extends BarrageMessage {
+  background: string
+  border: string
+  textColor: string
+  delay: number
+  renderKey: string
+}
+
 const labels: Record<Status, string> = { pending: '待审批', approved: '已通过', rejected: '先等等' }
 
 function savedAuthor(): { authorName: string; authorAvatar: string } {
@@ -95,6 +110,28 @@ const blankForm = (): ApprovalForm => ({ ...savedAuthor(), isAnonymous: false, f
 let keyboardHeightListener: ((result: { height: number }) => void) | null = null
 let foodSearchRequestId = 0
 let dataLoadRequestId = 0
+
+const fallbackBarrageMessages = [
+  '这不是馋，是生活在发光',
+  '今天这口，允许自己快乐一下',
+  '先吃两口垫垫，别让肚子开会',
+  '运动量达标，热量先记账',
+  '看着就香，但建议少来一点',
+  '这顿不吃，快乐要打折',
+  '允许放纵一次，明天继续自律',
+  '再等等，下一顿会更香',
+  '批准通过，人生没有撤回键',
+  '建议开吃，别让胃等太久',
+]
+
+const barrageColors = [
+  { background: '#d8d0d2', border: '#c8babe', textColor: '#695d63' },
+  { background: '#d3d9cf', border: '#bdc9b9', textColor: '#5f6b5e' },
+  { background: '#d2d8df', border: '#bbc6d1', textColor: '#5d6874' },
+  { background: '#ded5c7', border: '#cfc1ad', textColor: '#716452' },
+  { background: '#d9d1dc', border: '#c8b9d0', textColor: '#6e6177' },
+  { background: '#d0dadd', border: '#b8c9cc', textColor: '#5b6d71' },
+]
 
 function normalizeFoodKeyword(value: string) {
   return value.trim().toLowerCase().replace(/[\s·＋+、,，。/\\_-]/g, '')
@@ -165,6 +202,9 @@ Component({
     voteTargetId: '',
     voteChoice: '' as VoteChoice | '',
     voteReason: '',
+    barrageMessages: [] as BarrageMessage[],
+    barrageItems: [] as BarrageItem[],
+    barrageStarted: false,
     todayCalories: 0,
     calorieQuota: 0,
     quotaPercent: 0,
@@ -173,7 +213,7 @@ Component({
     approvedCount: 0,
     submittedCount: 0,
     topRejected: '',
-    filterCounts: { all: 0, pending: 0, approved: 0, rejected: 0 },
+    filterCounts: { all: 0, mine: 0, approved: 0, rejected: 0 },
     loading: true,
     apiError: '',
     initialLoadStarted: false,
@@ -199,9 +239,10 @@ Component({
       void this.loadData(this.data.shareTargetId as string)
     },
     detached() {
-      if (!keyboardHeightListener) return
-      wx.offKeyboardHeightChange(keyboardHeightListener)
-      keyboardHeightListener = null
+      if (keyboardHeightListener) {
+        wx.offKeyboardHeightChange(keyboardHeightListener)
+        keyboardHeightListener = null
+      }
     },
   },
   methods: {
@@ -214,21 +255,35 @@ Component({
     async loadData(sharedApprovalId = '') {
       const requestId = ++dataLoadRequestId
       if (!isApiConfigured()) {
+        const fallbackMessages = this.buildBarrageMessages([])
+        this.setData({ barrageMessages: fallbackMessages })
+        this.startBarrage(fallbackMessages)
         this.setData({ loading: false, apiError: '请先配置后端服务' })
         return
       }
       this.setData({ loading: true, apiError: '' })
       try {
-        const [rawApprovals, apiRecords, apiStats] = await Promise.all([fetchApprovals(), fetchRecords(), fetchStats()])
+        const [rawApprovals, apiRecords, apiStats, rawMessages] = await Promise.all([
+          fetchApprovals(),
+          fetchRecords(),
+          fetchStats(),
+          fetchApprovalMessages().catch(error => {
+            // 兼容尚未部署留言接口的旧云托管版本，首页主数据不应因此失败。
+            console.warn('load approval messages failed', error)
+            return [] as ApiApprovalMessage[]
+          }),
+        ])
         const apiItems = await resolveApprovalImages(rawApprovals)
         if (requestId !== dataLoadRequestId) return
-        const approvals = apiItems.map(item => this.mapApiApproval(item))
         const records = apiRecords.map(mapApiRecord)
+        const approvalIds = new Set(records.filter(record => record.isApproval).map(record => record.id))
+        const approvals = apiItems.map(item => this.mapApiApproval(item, approvalIds.has(item.id)))
+        const barrageMessages = this.buildBarrageMessages(rawMessages)
         const stats = apiStats as ApiStats
         const update: Record<string, unknown> = {
           approvals,
-          filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey),
-          filterCounts: this.getFilterCounts(approvals),
+          filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey, approvalIds),
+          filterCounts: this.getFilterCounts(approvals, approvalIds),
           myRecords: records,
           todayCalories: stats.todayCalories,
           calorieQuota: stats.calorieQuota,
@@ -238,14 +293,16 @@ Component({
           approvedCount: stats.approvedCount,
           submittedCount: stats.submittedCount,
           topRejected: stats.topRejected,
+          barrageMessages,
           loading: false,
         }
         this.setData(update)
+        this.startBarrage(barrageMessages)
         if (sharedApprovalId && !approvals.some(item => item.id === sharedApprovalId)) {
           try {
             const [sharedItem] = await resolveApprovalImages([await fetchApproval(sharedApprovalId)])
             if (requestId !== dataLoadRequestId) return
-            const sharedApproval = this.mapApiApproval(sharedItem)
+            const sharedApproval = this.mapApiApproval(sharedItem, approvalIds.has(sharedItem.id))
             const withShared = [sharedApproval, ...approvals]
             this.setData({ approvals: withShared, filteredApprovals: this.filterApprovals(withShared, this.data.activeFilter as FilterKey), filterCounts: this.getFilterCounts(withShared) })
           } catch (_error) {
@@ -255,16 +312,20 @@ Component({
       } catch (error) {
         if (requestId !== dataLoadRequestId) return
         console.warn('load approvals failed', error)
+        const fallbackMessages = this.buildBarrageMessages([])
+        this.setData({ barrageMessages: fallbackMessages })
+        this.startBarrage(fallbackMessages)
         this.setData({ loading: false, apiError: '数据加载失败，请稍后重试' })
       }
     },
-    mapApiApproval(item: ApiApproval): Approval {
+    mapApiApproval(item: ApiApproval, isMine = false): Approval {
       const status = item.status
       return {
         id: item.id,
         authorName: item.isAnonymous === false ? item.authorName || '微信用户' : '匿名',
         authorAvatar: item.isAnonymous === false ? item.authorAvatar || '' : '',
         status,
+        isMine,
         statusLabel: labels[status],
         title: item.title,
         price: item.price === null || item.price === undefined ? '' : String(item.price),
@@ -283,15 +344,38 @@ Component({
         emoji: item.emoji || '🍽️',
       }
     },
+    buildBarrageMessages(items: ApiApprovalMessage[]) {
+      const messages: BarrageMessage[] = []
+      const seen = new Set<string>()
+      items.forEach((item, index) => {
+        const text = typeof item.text === 'string' ? item.text.trim() : ''
+        if (!text || seen.has(text)) return
+        seen.add(text)
+        messages.push({ id: item.id || `message-${index}`, text, createdAt: item.createdAt || '' })
+      })
+      fallbackBarrageMessages.forEach((text, index) => {
+        if (messages.length >= 10 || seen.has(text)) return
+        seen.add(text)
+        messages.push({ id: `fallback-${index}`, text, createdAt: '' })
+      })
+      return messages.slice(0, 10)
+    },
+    createBarrageItem(message: BarrageMessage, slot: number, delay: number, version: number): BarrageItem {
+      const color = barrageColors[Math.floor(Math.random() * barrageColors.length)]
+      return {
+        ...message,
+        ...color,
+        delay,
+        renderKey: `${message.id}-${slot}-${version}`,
+      }
+    },
+    startBarrage(messages: BarrageMessage[]) {
+      if (!messages.length || this.data.barrageStarted) return
+      const initialItems = messages.slice(0, 5).map((message, index) => this.createBarrageItem(message, index, index * 2, 0))
+      this.setData({ barrageItems: initialItems, barrageStarted: true })
+    },
     relativeTime(value: string) {
       return relativeTime(value)
-    },
-    getFilterCounts(approvals: Approval[]) {
-      return approvals.reduce((counts, item) => {
-        counts.all += 1
-        counts[item.status] += 1
-        return counts
-      }, { all: 0, pending: 0, approved: 0, rejected: 0 })
     },
     onShareAppMessage(options: any) {
       const buttonId = options && options.from === 'button' && options.target
@@ -438,14 +522,36 @@ Component({
       const approvals = this.data.approvals as Approval[]
       this.setData({ activeFilter: filter, filteredApprovals: this.filterApprovals(approvals, filter) })
     },
-    filterApprovals(approvals: Approval[], filter: FilterKey) {
-      return filter === 'all' ? approvals : approvals.filter(item => item.status === filter)
+    filterApprovals(approvals: Approval[], filter: FilterKey, approvalIds?: Set<string>) {
+      if (filter === 'all') return approvals
+      if (filter === 'mine') {
+        const mineIds = approvalIds || new Set((this.data.myRecords as MyRecord[]).filter(record => record.isApproval).map(record => record.id))
+        return approvals.filter(item => mineIds.has(item.id))
+      }
+      return approvals.filter(item => item.status === filter)
+    },
+    getFilterCounts(approvals: Approval[], approvalIds?: Set<string>) {
+      const mineIds = approvalIds || new Set((this.data.myRecords as MyRecord[]).filter(record => record.isApproval).map(record => record.id))
+      const counts = { all: 0, mine: 0, approved: 0, rejected: 0 }
+      approvals.forEach(item => {
+        counts.all += 1
+        if (mineIds.has(item.id)) counts.mine += 1
+        if (item.status === 'approved') counts.approved += 1
+        if (item.status === 'rejected') counts.rejected += 1
+      })
+      return counts
     },
     retryLoadData() {
       void this.loadData(this.data.shareTargetId as string)
     },
     openVote(e: any) {
-      this.setData({ voteTargetId: String(e.currentTarget.dataset.id || ''), voteChoice: e.currentTarget.dataset.choice as VoteChoice, voteReason: '' })
+      const targetId = String(e.currentTarget.dataset.id || '')
+      const target = (this.data.approvals as Approval[]).find(item => item.id === targetId)
+      if (target && target.isMine) {
+        wx.showToast({ title: '自己发起的审批不能投票', icon: 'none' })
+        return
+      }
+      this.setData({ voteTargetId: targetId, voteChoice: e.currentTarget.dataset.choice as VoteChoice, voteReason: '' })
     },
     closeVoteSheet() { this.setData({ voteTargetId: '', voteChoice: '', voteReason: '' }) },
     stopPropagation() {},
@@ -460,7 +566,7 @@ Component({
       try {
         const item = await createApprovalVote(targetId, { choice, reason })
         const existing = (this.data.approvals as Approval[]).find(approval => approval.id === targetId)
-        const updated = this.mapApiApproval({ ...item, authorAvatar: existing ? existing.authorAvatar : '', image: existing && existing.image || item.image })
+        const updated = this.mapApiApproval({ ...item, authorAvatar: existing ? existing.authorAvatar : '', image: existing && existing.image || item.image }, Boolean(existing && existing.isMine))
         const approvals = (this.data.approvals as Approval[]).map(item => item.id === targetId ? updated : item)
         this.setData({ approvals, filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey), filterCounts: this.getFilterCounts(approvals), voteTargetId: '', voteChoice: '', voteReason: '' })
         await this.loadData()
@@ -579,7 +685,7 @@ Component({
           intake: form.intake.trim(),
           image,
         })
-        const approval = this.mapApiApproval({ ...item, authorAvatar: form.isAnonymous ? '' : this.data.avatarPreview, image: imagePath || item.image })
+        const approval = this.mapApiApproval({ ...item, authorAvatar: form.isAnonymous ? '' : this.data.avatarPreview, image: imagePath || item.image }, true)
         const approvals = [approval, ...(this.data.approvals as Approval[])]
         this.setData({ approvals, filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey), filterCounts: this.getFilterCounts(approvals), form: blankForm(), uploadedImage: '', uploadedImageSource: '', foodSuggestions: [], foodMatchHint: '', selectedFoodId: '', selectedFood: null, portionOptions: [], portionIndex: 0, calorieHint: '', calorieSource: 'manual' as CalorieSource, activeTab: 'square' as TabKey, formFocusAnchor: '', keyboardHeight: 0, pageScrollStyle: '' })
         await this.loadData()
