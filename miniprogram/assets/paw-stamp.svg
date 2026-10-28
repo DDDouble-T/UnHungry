@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="144" viewBox="0 0 128 144" fill="none">
+  <defs>
+    <linearGradient id="metal" x1="64" y1="0" x2="64" y2="144" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D6E3E5"/>
+      <stop offset=".35" stop-color="#EFF6F5"/>
+      <stop offset=".7" stop-color="#C5D5D7"/>
+      <stop offset="1" stop-color="#A8BEC2"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="64" y1="0" x2="64" y2="144" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset=".45" stop-color="#F7FBFB"/>
+      <stop offset="1" stop-color="#8EA8AF"/>
+    </linearGradient>
+    <linearGradient id="pads" x1="64" y1="21" x2="64" y2="111" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A3BCC0"/>
+      <stop offset=".37" stop-color="#E4F0EF"/>
+      <stop offset=".65" stop-color="#91ACB1"/>
+      <stop offset="1" stop-color="#C7DAD9"/>
+    </linearGradient>
+    <linearGradient id="pad-edge" x1="64" y1="21" x2="64" y2="111" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#78969D"/>
+      <stop offset=".55" stop-color="#ACC2C5"/>
+      <stop offset="1" stop-color="#F7FDFB"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="128" height="144" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="5" stdDeviation="3" flood-color="#385D64" flood-opacity=".22"/>
+    </filter>
+    <filter id="brushed" x="0" y="0" width="128" height="144" filterUnits="userSpaceOnUse">
+      <feTurbulence type="fractalNoise" baseFrequency=".14 .8" numOctaves="2" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer><feFuncA type="linear" slope=".055"/></feComponentTransfer>
+    </filter>
+    <path id="paw" d="M35 78C22 78 11 69 10 57C9 46 14 38 22 38C30 37 35 45 38 54C35 43 31 33 34 22C36 12 42 7 49 10C58 13 60 27 61 40C63 26 66 11 76 11C86 11 90 22 87 35L82 55C87 44 92 38 100 40C110 42 113 52 110 63C108 73 101 79 92 80C98 88 105 99 103 110C101 123 91 129 78 126C66 122 61 122 48 127C35 131 22 125 21 113C20 99 29 86 35 78Z"/>
+    <clipPath id="paw-clip"><use href="#paw"/></clipPath>
+  </defs>
+  <g filter="url(#shadow)">
+    <use href="#paw" fill="#78949C" stroke="#6A8991" stroke-width="3" transform="translate(0 2)"/>
+    <use href="#paw" fill="url(#metal)" stroke="#6A8991" stroke-width="2"/>
+    <use href="#paw" stroke="url(#rim)" stroke-width="3" transform="translate(1.9 2.1) scale(.97)"/>
+    <g clip-path="url(#paw-clip)"><path fill="#FFFFFF" filter="url(#brushed)" d="M0 0H128V144H0Z"/></g>
+    <g fill="url(#pads)" stroke="url(#pad-edge)" stroke-width="1.3">
+      <ellipse cx="25" cy="57" rx="8" ry="11.5" transform="rotate(-25 25 57)"/>
+      <ellipse cx="47.5" cy="32" rx="8" ry="13.5" transform="rotate(-12 47.5 32)"/>
+      <ellipse cx="74" cy="33" rx="8" ry="13.5" transform="rotate(13 74 33)"/>
+      <ellipse cx="97" cy="59" rx="8" ry="11.5" transform="rotate(25 97 59)"/>
+      <path d="M38 99C41 91 47 88 51 81C56 73 64 73 69 81C74 89 81 91 84 100C88 112 78 117 69 112C63 109 58 109 51 113C42 118 33 110 38 99Z"/>
+    </g>
+    <path d="M39 25C40 19 43 15 47 16M67 28C69 20 71 17 75 17M29 89C26 95 25 101 26 106" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" opacity=".9"/>
+  </g>
+</svg>

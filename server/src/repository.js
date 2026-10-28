@@ -96,11 +96,18 @@ function calculateStats(records) {
   rejected.forEach(item => rejectedNames.set(item.title, (rejectedNames.get(item.title) || 0) + 1))
   const topRejected = [...rejectedNames.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || ''
   const today = new Date().toISOString().slice(0, 10)
+  const todayCalories = records.filter(item => {
+    // 发起或获批不代表实际摄入；跨日确认吃了时，热量归到确认当天。
+    const eaten = item.status === 'logged' || item.foodRecorded || item.checkinResult === '真香'
+    const consumedAt = item.approvalId ? item.updatedAt || item.createdAt : item.createdAt
+    const consumedDay = consumedAt instanceof Date ? consumedAt.toISOString().slice(0, 10) : String(consumedAt || '').slice(0, 10)
+    return eaten && consumedDay === today
+  }).reduce((sum, item) => sum + (Number(item.calorie) || 0), 0)
   return {
     submittedCount: approvalRecords.length,
     approvedCount,
     approvalRate: approvalRecords.length ? Math.round((approvedCount / approvalRecords.length) * 100) : 0,
-    todayCalories: records.filter(item => item.createdAt.startsWith(today)).reduce((sum, item) => sum + (Number(item.calorie) || 0), 0),
+    todayCalories: Math.round(todayCalories * 100) / 100,
     calorieQuota: 1600,
     savedCalories: rejected.reduce((sum, item) => sum + (Number(item.calorie) || 0), 0),
     topRejected,

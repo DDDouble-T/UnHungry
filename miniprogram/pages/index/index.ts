@@ -1,4 +1,6 @@
 import { requestApprovalSubscription } from '../../config'
+import { createApprovalPoster } from '../../utils/approval-poster'
+import { getQuotaState } from '../../utils/quota'
 import { ApiApproval, ApiApprovalMessage, ApiFood, ApiRecord, ApiStats, checkIn as submitCheckIn, createApproval, createApprovalVote, createFoodRecord, fetchApproval, fetchApprovalMessages, fetchApprovals, fetchFoods, fetchRecords, fetchStats, isApiConfigured, recordApprovalFood as submitApprovalFood, resolveApprovalImages, resolveImageUrls, uploadApprovalImage, uploadAuthorAvatar } from '../../utils/api'
 
 type TabKey = 'square' | 'apply' | 'record' | 'me'
@@ -87,13 +89,12 @@ interface BarrageMessage {
 
 interface BarrageItem extends BarrageMessage {
   background: string
-  border: string
   textColor: string
   delay: number
   renderKey: string
 }
 
-const labels: Record<Status, string> = { pending: '待审批', approved: '已通过', rejected: '先等等' }
+const labels: Record<Status, string> = { pending: '待判官', approved: '已放行', rejected: '暂缓驳回' }
 
 function savedAuthor(): { authorName: string; authorAvatar: string } {
   try {
@@ -125,12 +126,12 @@ const fallbackBarrageMessages = [
 ]
 
 const barrageColors = [
-  { background: '#d8d0d2', border: '#c8babe', textColor: '#695d63' },
-  { background: '#d3d9cf', border: '#bdc9b9', textColor: '#5f6b5e' },
-  { background: '#d2d8df', border: '#bbc6d1', textColor: '#5d6874' },
-  { background: '#ded5c7', border: '#cfc1ad', textColor: '#716452' },
-  { background: '#d9d1dc', border: '#c8b9d0', textColor: '#6e6177' },
-  { background: '#d0dadd', border: '#b8c9cc', textColor: '#5b6d71' },
+  { background: '#d8d0d2', textColor: '#695d63' },
+  { background: '#d3d9cf', textColor: '#5f6b5e' },
+  { background: '#d2d8df', textColor: '#5d6874' },
+  { background: '#ded5c7', textColor: '#716452' },
+  { background: '#d9d1dc', textColor: '#6e6177' },
+  { background: '#d0dadd', textColor: '#5b6d71' },
 ]
 
 function normalizeFoodKeyword(value: string) {
@@ -150,7 +151,7 @@ function mapApiRecord(item: ApiRecord): MyRecord {
     time: item.time ? relativeTime(item.time) : '',
     calorie: item.calorie === null || item.calorie === undefined ? '待估算' : String(item.calorie),
     status: item.status,
-    statusLabel: item.statusLabel,
+    statusLabel: item.status === 'logged' ? '已记录' : labels[item.status],
     checkinResult: item.checkinResult === '真香' ? '已记录' : item.checkinResult === '后悔' ? '忍住了，真棒' : item.checkinResult || '',
   }
 }
@@ -195,6 +196,8 @@ Component({
     recordApprovalId: '',
     myRecords: [] as MyRecord[],
     shareTargetId: '',
+    shareSheetId: '',
+    posterGenerating: false,
     shareAnchor: '',
     formFocusAnchor: '',
     keyboardHeight: 0,
@@ -205,9 +208,7 @@ Component({
     barrageMessages: [] as BarrageMessage[],
     barrageItems: [] as BarrageItem[],
     barrageStarted: false,
-    todayCalories: 0,
-    calorieQuota: 0,
-    quotaPercent: 0,
+    ...getQuotaState(0, 0),
     savedCalories: 0,
     approvalRate: 0,
     approvedCount: 0,
@@ -285,9 +286,7 @@ Component({
           filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey, approvalIds),
           filterCounts: this.getFilterCounts(approvals, approvalIds),
           myRecords: records,
-          todayCalories: stats.todayCalories,
-          calorieQuota: stats.calorieQuota,
-          quotaPercent: stats.calorieQuota ? Math.min(100, Math.round(stats.todayCalories / stats.calorieQuota * 100)) : 0,
+          ...getQuotaState(stats.todayCalories, stats.calorieQuota),
           savedCalories: stats.savedCalories,
           approvalRate: stats.approvalRate,
           approvedCount: stats.approvedCount,
@@ -371,7 +370,7 @@ Component({
     },
     startBarrage(messages: BarrageMessage[]) {
       if (!messages.length || this.data.barrageStarted) return
-      const initialItems = messages.slice(0, 5).map((message, index) => this.createBarrageItem(message, index, index * 2, 0))
+      const initialItems = messages.slice(0, 3).map((message, index) => this.createBarrageItem(message, index, index * 2.2, 0))
       this.setData({ barrageItems: initialItems, barrageStarted: true })
     },
     relativeTime(value: string) {
@@ -385,14 +384,15 @@ Component({
       const approval = (this.data.approvals as Approval[]).find(item => item.id === selectedId)
       const title = approval
         ? `帮我看看「${approval.title}」这顿要不要吃？`
-        : '吃之前，先来一张饮食审批单'
+        : '干饭暂缓局｜想吃先提交，判官帮你踩刹车'
       const path = approval ? `/pages/index/index?approvalId=${encodeURIComponent(approval.id)}` : '/pages/index/index'
+      this.closeShareSheet()
       return { title, path }
     },
     onShareTimeline() {
       const selectedId = this.data.shareTargetId as string
       const approval = (this.data.approvals as Approval[]).find(item => item.id === selectedId)
-      if (!approval) return { title: '吃之前，先来一张饮食审批单' }
+      if (!approval) return { title: '干饭暂缓局｜想吃先提交，判官帮你踩刹车' }
       return {
         title: `「${approval.title}」要不要吃？帮忙审批一下`,
         query: `approvalId=${encodeURIComponent(approval.id)}`,
@@ -403,6 +403,7 @@ Component({
       if (activeTab === 'apply') { this.startApply(); return }
       this.setData({
         activeTab,
+        shareSheetId: '',
         formFocusAnchor: '',
         ...(activeTab === 'record' ? {} : { keyboardHeight: 0, pageScrollStyle: '' }),
       })
@@ -502,9 +503,40 @@ Component({
       }
     },
     openFriends() { wx.showToast({ title: '亲友群审批即将开放', icon: 'none' }) },
+    openShareSheet(e: any) {
+      const id = String(e.currentTarget.dataset.id || '')
+      if (!(this.data.approvals as Approval[]).some(item => item.id === id)) return
+      this.setData({ shareSheetId: id, shareTargetId: id })
+    },
+    closeShareSheet() { this.setData({ shareSheetId: '' }) },
+    async previewShareCard() {
+      if (this.data.posterGenerating) return
+      const approval = (this.data.approvals as Approval[]).find(item => item.id === this.data.shareSheetId)
+      if (!approval) return
+      this.setData({ posterGenerating: true })
+      try {
+        const canvas = await new Promise<WechatMiniprogram.Canvas>((resolve, reject) => {
+          this.createSelectorQuery().select('#approval-poster').fields({ node: true, size: true }).exec((result: any[]) => {
+            if (result[0] && result[0].node) resolve(result[0].node as WechatMiniprogram.Canvas)
+            else reject(new Error('分享画布尚未就绪'))
+          })
+        })
+        const path = await createApprovalPoster(canvas, approval, wx.getSystemInfoSync().pixelRatio)
+        // 生成期间用户可能已关闭或切换申请，旧结果不应打断新的分享操作。
+        if (this.data.shareSheetId !== approval.id) return
+        this.closeShareSheet()
+        // 原生预览支持长按保存，不额外索取相册权限；导出图只含本张申请。
+        wx.previewImage({ current: path, urls: [path], fail: () => wx.showToast({ title: '图片预览失败，请重试', icon: 'none' }) })
+      } catch (error) {
+        console.warn('generate share card failed', error)
+        if (this.data.shareSheetId === approval.id) wx.showToast({ title: '分享图生成失败，请重试', icon: 'none' })
+      } finally {
+        this.setData({ posterGenerating: false })
+      }
+    },
     prepareTimelineShare(e: any) {
       const id = String(e.currentTarget.dataset.id || '')
-      this.setData({ shareTargetId: id })
+      this.setData({ shareTargetId: id, shareSheetId: '' })
       try {
         wx.showShareMenu({ withShareTicket: false, menus: ['shareAppMessage', 'shareTimeline'] })
           .then(() => wx.showToast({ title: '请从右上角菜单分享到朋友圈', icon: 'none' }))
@@ -732,9 +764,7 @@ Component({
         try {
           const stats = await fetchStats()
           this.setData({
-            todayCalories: stats.todayCalories,
-            calorieQuota: stats.calorieQuota,
-            quotaPercent: stats.calorieQuota ? Math.min(100, Math.round(stats.todayCalories / stats.calorieQuota * 100)) : 0,
+            ...getQuotaState(stats.todayCalories, stats.calorieQuota),
             savedCalories: stats.savedCalories,
             approvalRate: stats.approvalRate,
             approvedCount: stats.approvedCount,
