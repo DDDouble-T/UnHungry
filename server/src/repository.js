@@ -1,6 +1,7 @@
 const crypto = require('node:crypto')
 const foods = require('../data/foods.json')
 const { conflict, notFound } = require('./errors')
+const { isApprovalWithinValidity, isRecentRecord, resolveApprovalOutcome, resolveRecordOutcome } = require('./approval-lifecycle')
 
 const COLLECTIONS = { approvals: 'approvals', votes: 'approval_votes', records: 'user_records' }
 const STATUS_LABELS = { pending: '待审批', approved: '已通过', rejected: '先等等' }
@@ -69,6 +70,32 @@ function recordFor(approval, openid, createdAt = now()) {
   }
 }
 
+function recordFromApproval(approval, openid) {
+  // 历史数据可能只有审批主体，没有同步生成 user_records；先用审批主体补齐列表，避免“我的”记录凭空消失。
+  return {
+    _id: approval._id,
+    _openid: openid,
+    approvalId: approval._id,
+    title: approval.title,
+    calorie: approval.calorie,
+    status: approval.status,
+    checkinResult: '',
+    createdAt: approval.createdAt,
+    updatedAt: approval.updatedAt || approval.createdAt,
+  }
+}
+
+function mergeApprovalRecords(records, approvals, openid, reference) {
+  const existingApprovalIds = new Set(records.filter(item => item.approvalId).map(item => item.approvalId))
+  const missing = approvals
+    .filter(item => item && item._id && item._openid === openid && !existingApprovalIds.has(item._id))
+    .map(item => recordFromApproval(item, openid))
+  return [...records, ...missing]
+    .filter(item => isRecentRecord(item, reference))
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+    .map(item => resolveRecordOutcome(item, reference))
+}
+
 function foodRecordFor(input, openid, createdAt = now()) {
   return {
     _id: newId(),
@@ -123,10 +150,20 @@ class MemoryRepository {
   }
 
   async listApprovals({ status = 'all', limit = 50 } = {}) {
+    const reference = new Date()
     return [...this.approvals.values()]
       .filter(item => status === 'all' || item.status === status)
+      .filter(item => isApprovalWithinValidity(item.createdAt, reference))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit)
+      .map(item => this.withFoodDecision(item))
+  }
+
+  withFoodDecision(item) {
+    const record = [...this.records.values()].find(record => record.approvalId === item._id && record._openid === item._openid)
+    const resolved = resolveRecordOutcome(record)
+    const approval = resolveApprovalOutcome(item, record)
+    return { ...approval, foodDecided: Boolean(resolved && (resolved.foodRecorded || resolved.checkinResult) || approval.foodDecided), foodResult: approval.foodResult || (resolved && (resolved.foodRecorded || resolved.checkinResult === '真香') ? 'eaten' : resolved && resolved.checkinResult === '后悔' ? 'skipped' : '') }
   }
 
   async listFoods({ keyword = '', limit = 5 } = {}) {
@@ -150,7 +187,7 @@ class MemoryRepository {
   async getApproval(approvalId) {
     const item = this.approvals.get(approvalId)
     if (!item) throw notFound('审批单不存在')
-    return item
+    return this.withFoodDecision(item)
   }
 
   async createApproval(input, openid) {
@@ -179,9 +216,11 @@ class MemoryRepository {
   async createVote(approvalId, input, openid) {
     const approval = await this.getApproval(approvalId)
     if (approval._openid === openid) throw conflict('SELF_VOTE_NOT_ALLOWED', '不能给自己发起的审批投票')
+    if (!isApprovalWithinValidity(approval.createdAt)) throw conflict('APPROVAL_EXPIRED', '这张审批单已过期')
     // 复合键同时承担幂等约束：同一用户对同一审批单只能产生一票。
     const voteId = `${approvalId}:${openid}`
     if (this.votes.has(voteId)) throw conflict('DUPLICATE_VOTE', '你已经投过这张审批单')
+    if (approval.foodDecided) throw conflict('APPROVAL_CLOSED', '发起人已选择吃了或没吃，不能继续投票')
     if (approval.status !== 'pending') throw conflict('APPROVAL_CLOSED', '这张审批单已经完成审批')
     const support = approval.support + (input.choice === 'approve' ? 1 : 0)
     const against = approval.against + (input.choice === 'wait' ? 1 : 0)
@@ -199,9 +238,10 @@ class MemoryRepository {
   }
 
   async listRecords(openid) {
-    return [...this.records.values()]
+    const reference = new Date()
+    const records = [...this.records.values()]
       .filter(item => item._openid === openid)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    return mergeApprovalRecords(records, [...this.approvals.values()], openid, reference)
   }
 
   async createFoodRecord(input, openid) {
@@ -215,6 +255,7 @@ class MemoryRepository {
     if (!record) throw notFound('没有找到这张审批单的个人记录')
     if (record.foodRecorded) return record
     if (record.checkinResult) throw conflict('RECORD_ALREADY_DECIDED', '这张审批单已经记录过结果')
+    if (!isApprovalWithinValidity(record.createdAt)) throw conflict('APPROVAL_EXPIRED', '这张审批单已过期')
     if (record.status !== 'approved') throw conflict('RECORD_NOT_ALLOWED', '审批通过后才能添加食物')
     // 更新原记录，避免同一顿食物生成两条记录、重复计算热量。
     Object.assign(record, { title: input.title, calorie: input.calorie, image: input.image, foodRecorded: true, updatedAt: now() })
@@ -229,6 +270,7 @@ class MemoryRepository {
       if (record.checkinResult === result) return record
       throw conflict('RECORD_ALREADY_DECIDED', '这张审批单已经记录过结果')
     }
+    if (!isApprovalWithinValidity(record.createdAt)) throw conflict('APPROVAL_EXPIRED', '这张审批单已过期')
     if (record.status !== 'approved') throw conflict('CHECKIN_NOT_ALLOWED', '审批通过后才能打卡')
     record.checkinResult = result
     record.updatedAt = now()
@@ -236,7 +278,11 @@ class MemoryRepository {
   }
 
   async getStats(openid) {
-    return calculateStats(await this.listRecords(openid))
+    const reference = new Date()
+    const records = [...this.records.values()]
+      .filter(item => item._openid === openid)
+      .map(item => resolveRecordOutcome(item, reference))
+    return calculateStats(records)
   }
 }
 
@@ -257,10 +303,23 @@ class CloudBaseRepository {
   }
 
   async listApprovals({ status = 'all', limit = 50 } = {}) {
+    const reference = new Date()
     let query = this.collection(COLLECTIONS.approvals)
     if (status !== 'all') query = query.where({ status })
     const result = await query.orderBy('createdAt', 'desc').limit(limit).get()
-    return result.data || []
+    return this.withFoodDecisions((result.data || []).filter(item => isApprovalWithinValidity(item.createdAt, reference)), reference)
+  }
+
+  async withFoodDecisions(items, reference = new Date()) {
+    if (!items.length) return []
+    // 每张审批只有一条个人记录，批量读取避免广场列表逐条查询。
+    const result = await this.collection(COLLECTIONS.records).where({ approvalId: this.db.command.in(items.map(item => item._id)) }).limit(items.length).get()
+    return items.map(item => {
+      const record = (result.data || []).find(record => record.approvalId === item._id && record._openid === item._openid)
+      const resolved = resolveRecordOutcome(record, reference)
+      const decorated = { ...item, foodDecided: Boolean(resolved && (resolved.foodRecorded || resolved.checkinResult)), foodResult: resolved && (resolved.foodRecorded || resolved.checkinResult === '真香') ? 'eaten' : resolved && resolved.checkinResult === '后悔' ? 'skipped' : '' }
+      return resolveApprovalOutcome(decorated, record, reference)
+    })
   }
 
   async listFoods({ keyword = '', limit = 5 } = {}) {
@@ -280,7 +339,7 @@ class CloudBaseRepository {
   async getApproval(approvalId) {
     const item = cloudData(await this.collection(COLLECTIONS.approvals).doc(approvalId).get())
     if (!item) throw notFound('审批单不存在')
-    return item
+    return (await this.withFoodDecisions([item]))[0]
   }
 
   async createApproval(input, openid) {
@@ -319,6 +378,9 @@ class CloudBaseRepository {
       const approval = cloudData(await approvalCollection.doc(approvalId).get())
       if (!approval) throw notFound('审批单不存在')
       if (approval._openid === openid) throw conflict('SELF_VOTE_NOT_ALLOWED', '不能给自己发起的审批投票')
+      if (!isApprovalWithinValidity(approval.createdAt)) throw conflict('APPROVAL_EXPIRED', '这张审批单已过期')
+      const records = await tx.collection(COLLECTIONS.records).where({ approvalId, _openid: approval._openid }).get()
+      if ((records.data || []).some(record => record.foodRecorded || record.checkinResult)) throw conflict('APPROVAL_CLOSED', '发起人已选择吃了或没吃，不能继续投票')
       if (approval.status !== 'pending') throw conflict('APPROVAL_CLOSED', '这张审批单已经完成审批')
       const support = approval.support + (input.choice === 'approve' ? 1 : 0)
       const against = approval.against + (input.choice === 'wait' ? 1 : 0)
@@ -326,7 +388,6 @@ class CloudBaseRepository {
       const updatedAt = now()
       await voteCollection.doc(voteId).set({ _openid: openid, approvalId, ...input, createdAt: updatedAt })
       await approvalCollection.doc(approvalId).update({ support, against, ...result, updatedAt })
-      const records = await tx.collection(COLLECTIONS.records).where({ approvalId, _openid: approval._openid }).get()
       for (const record of records.data || []) {
         await tx.collection(COLLECTIONS.records).doc(record._id).update({ status: result.status, updatedAt })
       }
@@ -339,6 +400,8 @@ class CloudBaseRepository {
     if (existing) throw conflict('DUPLICATE_VOTE', '你已经投过这张审批单')
     const approval = await this.getApproval(approvalId)
     if (approval._openid === openid) throw conflict('SELF_VOTE_NOT_ALLOWED', '不能给自己发起的审批投票')
+    if (!isApprovalWithinValidity(approval.createdAt)) throw conflict('APPROVAL_EXPIRED', '这张审批单已过期')
+    if (approval.foodDecided) throw conflict('APPROVAL_CLOSED', '发起人已选择吃了或没吃，不能继续投票')
     if (approval.status !== 'pending') throw conflict('APPROVAL_CLOSED', '这张审批单已经完成审批')
     const support = approval.support + (input.choice === 'approve' ? 1 : 0)
     const against = approval.against + (input.choice === 'wait' ? 1 : 0)
@@ -354,8 +417,10 @@ class CloudBaseRepository {
   }
 
   async listRecords(openid) {
+    const reference = new Date()
     const result = await this.collection(COLLECTIONS.records).where({ _openid: openid }).orderBy('createdAt', 'desc').limit(100).get()
-    return result.data || []
+    const approvals = await this.collection(COLLECTIONS.approvals).where({ _openid: openid }).limit(100).get()
+    return mergeApprovalRecords(result.data || [], approvals.data || [], openid, reference)
   }
 
   async createFoodRecord(input, openid) {
@@ -370,6 +435,7 @@ class CloudBaseRepository {
     if (!record) throw notFound('没有找到这张审批单的个人记录')
     if (record.foodRecorded) return record
     if (record.checkinResult) throw conflict('RECORD_ALREADY_DECIDED', '这张审批单已经记录过结果')
+    if (!isApprovalWithinValidity(record.createdAt)) throw conflict('APPROVAL_EXPIRED', '这张审批单已过期')
     if (record.status !== 'approved') throw conflict('RECORD_NOT_ALLOWED', '审批通过后才能添加食物')
     const update = { title: input.title, calorie: input.calorie, image: input.image, foodRecorded: true, updatedAt: now() }
     await this.collection(COLLECTIONS.records).doc(record._id).update(update)
@@ -385,6 +451,7 @@ class CloudBaseRepository {
       if (record.checkinResult === result) return record
       throw conflict('RECORD_ALREADY_DECIDED', '这张审批单已经记录过结果')
     }
+    if (!isApprovalWithinValidity(record.createdAt)) throw conflict('APPROVAL_EXPIRED', '这张审批单已过期')
     if (record.status !== 'approved') throw conflict('CHECKIN_NOT_ALLOWED', '审批通过后才能打卡')
     const updatedAt = now()
     await this.collection(COLLECTIONS.records).doc(record._id).update({ checkinResult: result, updatedAt })
@@ -392,7 +459,9 @@ class CloudBaseRepository {
   }
 
   async getStats(openid) {
-    return calculateStats(await this.listRecords(openid))
+    const reference = new Date()
+    const result = await this.collection(COLLECTIONS.records).where({ _openid: openid }).orderBy('createdAt', 'desc').limit(1000).get()
+    return calculateStats((result.data || []).map(item => resolveRecordOutcome(item, reference)))
   }
 }
 
@@ -414,4 +483,4 @@ function createRepository({ envId = process.env.TCB_ENV_ID || process.env.CLOUDB
   return new CloudBaseRepository(app.database())
 }
 
-module.exports = { COLLECTIONS, CloudBaseRepository, MemoryRepository, createRepository, calculateStatus, calculateStats, searchFoods }
+module.exports = { COLLECTIONS, CloudBaseRepository, MemoryRepository, createRepository, calculateStatus, calculateStats, mergeApprovalRecords, searchFoods }

@@ -14,6 +14,8 @@ export interface ApiApproval {
   intake: string
   image: string
   createdAt: string
+  foodDecided: boolean
+  foodResult: 'eaten' | 'skipped' | ''
   support: number
   against: number
   totalVotes: number
@@ -57,6 +59,7 @@ export interface ApiStats {
 }
 
 export interface ApiApprovalMessage {
+  approvalId: string
   id: string
   text: string
   createdAt: string

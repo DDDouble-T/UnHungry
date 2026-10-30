@@ -8,7 +8,7 @@
     "start": "node src/app.js",
     "dev": "node --watch src/app.js",
     "test": "node --test test/*.test.js",
-    "check": "node --check src/app.js && node --check src/repository.js && node --check src/mysql-repository.js && node --check src/serializers.js && node --check src/validation.js && node --check src/notifications.js && node --check test/api.test.js && node --check test/cloudbase-repository.test.js && node --check test/notifications.test.js"
+    "check": "node --check src/app.js && node --check src/repository.js && node --check src/mysql-repository.js && node --check src/serializers.js && node --check src/validation.js && node --check src/notifications.js && node --check src/config.js && node --check src/approval-lifecycle.js && node --check test/api.test.js && node --check test/cloudbase-repository.test.js && node --check test/mysql-repository.test.js && node --check test/approval-lifecycle.test.js && node --check test/notifications.test.js"
   },
   "engines": {
     "node": ">=18"

@@ -125,7 +125,7 @@ function createApp({ repository = createRepository(), notifier = createNotifier(
   // 首页弹幕优先展示当前用户审批单收到的留言，再用全站最新留言补齐；只返回文案和时间，不暴露投票人身份。
   app.get('/api/v1/me/approval-messages', asyncRoute(async (request, response) => {
     const items = typeof repository.listApprovalMessages === 'function'
-      ? await repository.listApprovalMessages(openidFrom(request), Math.min(10, limit(request.query.limit)))
+      ? await repository.listApprovalMessages(openidFrom(request), Math.min(100, limit(request.query.limit)))
       : []
     response.json({ data: items.map(approvalMessage) })
   }))

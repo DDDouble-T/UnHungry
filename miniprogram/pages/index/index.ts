@@ -4,7 +4,7 @@ import { getQuotaState } from '../../utils/quota'
 import { ApiApproval, ApiApprovalMessage, ApiFood, ApiRecord, ApiStats, checkIn as submitCheckIn, createApproval, createApprovalVote, createFoodRecord, fetchApproval, fetchApprovalMessages, fetchApprovals, fetchFoods, fetchRecords, fetchStats, isApiConfigured, recordApprovalFood as submitApprovalFood, resolveApprovalImages, resolveImageUrls, uploadApprovalImage, uploadAuthorAvatar } from '../../utils/api'
 
 type TabKey = 'square' | 'apply' | 'record' | 'me'
-type FilterKey = 'all' | 'mine' | 'approved' | 'rejected'
+type FilterKey = 'all' | 'pending' | 'approved' | 'rejected'
 type Status = 'pending' | 'approved' | 'rejected'
 type RecordStatus = Status | 'logged'
 type VoteChoice = 'approve' | 'wait'
@@ -54,6 +54,11 @@ interface Approval {
   tags: string[]
   emoji: string
   createdAt: string
+  foodDecided: boolean
+  foodResult: 'eaten' | 'skipped' | ''
+  messages: string[]
+  messageExpanded: boolean
+  messageNeedsExpand: boolean
 }
 
 interface ApprovalForm {
@@ -83,6 +88,7 @@ interface MyRecord {
 
 interface BarrageMessage {
   id: string
+  approvalId: string
   text: string
   createdAt: string
 }
@@ -214,9 +220,9 @@ Component({
     approvedCount: 0,
     submittedCount: 0,
     topRejected: '',
-    filterCounts: { all: 0, mine: 0, approved: 0, rejected: 0 },
     loading: true,
     apiError: '',
+    hasLoadedData: false,
     initialLoadStarted: false,
     voteSubmitting: false,
     approvalSubmitting: false,
@@ -256,13 +262,17 @@ Component({
     async loadData(sharedApprovalId = '') {
       const requestId = ++dataLoadRequestId
       if (!isApiConfigured()) {
+        if (this.data.hasLoadedData) {
+          wx.showToast({ title: '服务暂不可用，当前内容已保留', icon: 'none' })
+          return
+        }
         const fallbackMessages = this.buildBarrageMessages([])
         this.setData({ barrageMessages: fallbackMessages })
         this.startBarrage(fallbackMessages)
         this.setData({ loading: false, apiError: '请先配置后端服务' })
         return
       }
-      this.setData({ loading: true, apiError: '' })
+      if (!this.data.hasLoadedData) this.setData({ loading: true, apiError: '' })
       try {
         const [rawApprovals, apiRecords, apiStats, rawMessages] = await Promise.all([
           fetchApprovals(),
@@ -277,14 +287,21 @@ Component({
         const apiItems = await resolveApprovalImages(rawApprovals)
         if (requestId !== dataLoadRequestId) return
         const records = apiRecords.map(mapApiRecord)
-        const approvalIds = new Set(records.filter(record => record.isApproval).map(record => record.id))
-        const approvals = apiItems.map(item => this.mapApiApproval(item, approvalIds.has(item.id)))
+        const approvalRecords = new Map(apiRecords.filter(record => record.recordId).map(record => [record.id, record]))
+        const approvalMessages = this.groupApprovalMessages(rawMessages)
+        const mapApproval = (item: ApiApproval) => {
+          const record = approvalRecords.get(item.id)
+          // 我的原审批记录也能确定饮食结果，兼容尚未返回广场结果字段的服务。
+          const foodResult = record && (record.foodRecorded || record.checkinResult === '真香') ? 'eaten'
+            : record && record.checkinResult === '后悔' ? 'skipped' : item.foodResult
+          return this.mapApiApproval({ ...item, foodDecided: Boolean(item.foodDecided || foodResult), foodResult }, Boolean(record), approvalMessages.get(item.id) || [])
+        }
+        const approvals = apiItems.map(mapApproval)
         const barrageMessages = this.buildBarrageMessages(rawMessages)
         const stats = apiStats as ApiStats
         const update: Record<string, unknown> = {
           approvals,
-          filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey, approvalIds),
-          filterCounts: this.getFilterCounts(approvals, approvalIds),
+          filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey),
           myRecords: records,
           ...getQuotaState(stats.todayCalories, stats.calorieQuota),
           savedCalories: stats.savedCalories,
@@ -294,6 +311,8 @@ Component({
           topRejected: stats.topRejected,
           barrageMessages,
           loading: false,
+          apiError: '',
+          hasLoadedData: true,
         }
         this.setData(update)
         this.startBarrage(barrageMessages)
@@ -301,23 +320,27 @@ Component({
           try {
             const [sharedItem] = await resolveApprovalImages([await fetchApproval(sharedApprovalId)])
             if (requestId !== dataLoadRequestId) return
-            const sharedApproval = this.mapApiApproval(sharedItem, approvalIds.has(sharedItem.id))
+            const sharedApproval = mapApproval(sharedItem)
             const withShared = [sharedApproval, ...approvals]
-            this.setData({ approvals: withShared, filteredApprovals: this.filterApprovals(withShared, this.data.activeFilter as FilterKey), filterCounts: this.getFilterCounts(withShared) })
+            this.setData({ approvals: withShared, filteredApprovals: this.filterApprovals(withShared, this.data.activeFilter as FilterKey) })
           } catch (_error) {
-            wx.showToast({ title: '这张审批单暂时无法查看', icon: 'none' })
+            if (requestId === dataLoadRequestId) wx.showToast({ title: '这张审批单暂时无法查看', icon: 'none' })
           }
         }
       } catch (error) {
         if (requestId !== dataLoadRequestId) return
         console.warn('load approvals failed', error)
+        if (this.data.hasLoadedData) {
+          wx.showToast({ title: '刷新失败，当前内容已保留', icon: 'none' })
+          return
+        }
         const fallbackMessages = this.buildBarrageMessages([])
         this.setData({ barrageMessages: fallbackMessages })
         this.startBarrage(fallbackMessages)
         this.setData({ loading: false, apiError: '数据加载失败，请稍后重试' })
       }
     },
-    mapApiApproval(item: ApiApproval, isMine = false): Approval {
+    mapApiApproval(item: ApiApproval, isMine = false, messages: string[] = []): Approval {
       const status = item.status
       return {
         id: item.id,
@@ -335,6 +358,11 @@ Component({
         image: item.image || '',
         time: this.relativeTime(item.createdAt),
         createdAt: item.createdAt,
+        foodDecided: Boolean(item.foodDecided),
+        foodResult: item.foodResult || '',
+        messages,
+        messageExpanded: false,
+        messageNeedsExpand: messages.length > 1 || (messages[0] || '').length > 18,
         support: item.support,
         against: item.against,
         totalVotes: item.totalVotes,
@@ -343,6 +371,23 @@ Component({
         emoji: item.emoji || '🍽️',
       }
     },
+    groupApprovalMessages(items: ApiApprovalMessage[]) {
+      const grouped = new Map<string, string[]>()
+      items.forEach(item => {
+        const approvalId = typeof item.approvalId === 'string' ? item.approvalId : ''
+        const text = typeof item.text === 'string' ? item.text.trim() : ''
+        if (!approvalId || !text) return
+        const messages = grouped.get(approvalId) || []
+        if (messages.indexOf(text) === -1) messages.push(text)
+        grouped.set(approvalId, messages)
+      })
+      return grouped
+    },
+    toggleApprovalMessages(e: any) {
+      const id = String(e.currentTarget.dataset.id || '')
+      const approvals = (this.data.approvals as Approval[]).map(item => item.id === id ? { ...item, messageExpanded: true } : item)
+      this.setData({ approvals, filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey) })
+    },
     buildBarrageMessages(items: ApiApprovalMessage[]) {
       const messages: BarrageMessage[] = []
       const seen = new Set<string>()
@@ -350,12 +395,12 @@ Component({
         const text = typeof item.text === 'string' ? item.text.trim() : ''
         if (!text || seen.has(text)) return
         seen.add(text)
-        messages.push({ id: item.id || `message-${index}`, text, createdAt: item.createdAt || '' })
+        messages.push({ id: item.id || `message-${index}`, approvalId: item.approvalId || '', text, createdAt: item.createdAt || '' })
       })
       fallbackBarrageMessages.forEach((text, index) => {
         if (messages.length >= 10 || seen.has(text)) return
         seen.add(text)
-        messages.push({ id: `fallback-${index}`, text, createdAt: '' })
+        messages.push({ id: `fallback-${index}`, approvalId: '', text, createdAt: '' })
       })
       return messages.slice(0, 10)
     },
@@ -400,6 +445,7 @@ Component({
     },
     switchTab(e: any) {
       const activeTab = e.currentTarget.dataset.tab as TabKey
+      if ((activeTab === 'square' || activeTab === 'me') && activeTab === this.data.activeTab) return
       if (activeTab === 'apply') { this.startApply(); return }
       this.setData({
         activeTab,
@@ -407,6 +453,7 @@ Component({
         formFocusAnchor: '',
         ...(activeTab === 'record' ? {} : { keyboardHeight: 0, pageScrollStyle: '' }),
       })
+      if (activeTab === 'square' || activeTab === 'me') void this.loadData(activeTab === 'square' ? this.data.shareTargetId as string : '')
     },
     startApply() {
       if (!this.data.form.isAnonymous && !this.data.form.authorName.trim()) {
@@ -468,7 +515,7 @@ Component({
       }
     },
     onAnonymousChange(e: any) {
-      this.setData({ 'form.isAnonymous': e.detail.value.includes('anonymous') })
+      this.setData({ 'form.isAnonymous': e.detail.value.indexOf('anonymous') !== -1 })
     },
     startRecord() {
       this.resetForm()
@@ -554,24 +601,26 @@ Component({
       const approvals = this.data.approvals as Approval[]
       this.setData({ activeFilter: filter, filteredApprovals: this.filterApprovals(approvals, filter) })
     },
-    filterApprovals(approvals: Approval[], filter: FilterKey, approvalIds?: Set<string>) {
+    filterApprovals(approvals: Approval[], filter: FilterKey) {
       if (filter === 'all') return approvals
-      if (filter === 'mine') {
-        const mineIds = approvalIds || new Set((this.data.myRecords as MyRecord[]).filter(record => record.isApproval).map(record => record.id))
-        return approvals.filter(item => mineIds.has(item.id))
+      if (filter === 'pending') {
+        // 服务端只返回有效期内的审批单；是否已选择饮食结果与投票结论分开判断。
+        return approvals.filter(item => !item.foodDecided)
       }
       return approvals.filter(item => item.status === filter)
     },
-    getFilterCounts(approvals: Approval[], approvalIds?: Set<string>) {
-      const mineIds = approvalIds || new Set((this.data.myRecords as MyRecord[]).filter(record => record.isApproval).map(record => record.id))
-      const counts = { all: 0, mine: 0, approved: 0, rejected: 0 }
-      approvals.forEach(item => {
-        counts.all += 1
-        if (mineIds.has(item.id)) counts.mine += 1
-        if (item.status === 'approved') counts.approved += 1
-        if (item.status === 'rejected') counts.rejected += 1
-      })
-      return counts
+    markApprovalFoodDecided(id: string, foodResult: 'eaten' | 'skipped') {
+      const approvals = (this.data.approvals as Approval[]).map(item => item.id === id ? { ...item, foodDecided: true, foodResult } : item)
+      this.setData({ approvals, filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey) })
+    },
+    applySavedRecord(record: MyRecord) {
+      // 写入前发出的列表请求不能再覆盖接口已确认的新记录或饮食结果。
+      dataLoadRequestId += 1
+      const records = this.data.myRecords as MyRecord[]
+      const myRecords = records.some(item => item.id === record.id)
+        ? records.map(item => item.id === record.id ? record : item)
+        : [record, ...records]
+      this.setData({ myRecords, loading: false, hasLoadedData: true })
     },
     retryLoadData() {
       void this.loadData(this.data.shareTargetId as string)
@@ -579,7 +628,8 @@ Component({
     openVote(e: any) {
       const targetId = String(e.currentTarget.dataset.id || '')
       const target = (this.data.approvals as Approval[]).find(item => item.id === targetId)
-      if (target && target.isMine) {
+      if (!target || target.foodDecided || target.status !== 'pending') return
+      if (target.isMine) {
         wx.showToast({ title: '自己发起的审批不能投票', icon: 'none' })
         return
       }
@@ -593,14 +643,16 @@ Component({
       const reason = (this.data.voteReason as string).trim()
       if (!reason) { wx.showToast({ title: '写下理由才算有效票', icon: 'none' }); return }
       const targetId = this.data.voteTargetId as string
+      const target = (this.data.approvals as Approval[]).find(item => item.id === targetId)
+      if (!target || target.foodDecided || target.status !== 'pending') { this.closeVoteSheet(); return }
       const choice = this.data.voteChoice as VoteChoice
       this.setData({ voteSubmitting: true })
       try {
         const item = await createApprovalVote(targetId, { choice, reason })
         const existing = (this.data.approvals as Approval[]).find(approval => approval.id === targetId)
-        const updated = this.mapApiApproval({ ...item, authorAvatar: existing ? existing.authorAvatar : '', image: existing && existing.image || item.image }, Boolean(existing && existing.isMine))
+        const updated = this.mapApiApproval({ ...item, authorAvatar: existing ? existing.authorAvatar : '', image: existing && existing.image || item.image }, Boolean(existing && existing.isMine), existing ? existing.messages : [])
         const approvals = (this.data.approvals as Approval[]).map(item => item.id === targetId ? updated : item)
-        this.setData({ approvals, filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey), filterCounts: this.getFilterCounts(approvals), voteTargetId: '', voteChoice: '', voteReason: '' })
+        this.setData({ approvals, filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey), voteTargetId: '', voteChoice: '', voteReason: '' })
         await this.loadData()
         wx.showToast({ title: '投票已计入', icon: 'success' })
       } catch (error) {
@@ -719,8 +771,15 @@ Component({
         })
         const approval = this.mapApiApproval({ ...item, authorAvatar: form.isAnonymous ? '' : this.data.avatarPreview, image: imagePath || item.image }, true)
         const approvals = [approval, ...(this.data.approvals as Approval[])]
-        this.setData({ approvals, filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey), filterCounts: this.getFilterCounts(approvals), form: blankForm(), uploadedImage: '', uploadedImageSource: '', foodSuggestions: [], foodMatchHint: '', selectedFoodId: '', selectedFood: null, portionOptions: [], portionIndex: 0, calorieHint: '', calorieSource: 'manual' as CalorieSource, activeTab: 'square' as TabKey, formFocusAnchor: '', keyboardHeight: 0, pageScrollStyle: '' })
+        const createdRecord: MyRecord = { id: approval.id, isApproval: true, foodRecorded: false, title: approval.title, time: approval.time, calorie: approval.calorie, status: approval.status, statusLabel: approval.statusLabel, checkinResult: '' }
+        this.setData({ approvals, filteredApprovals: this.filterApprovals(approvals, this.data.activeFilter as FilterKey), form: blankForm(), uploadedImage: '', uploadedImageSource: '', foodSuggestions: [], foodMatchHint: '', selectedFoodId: '', selectedFood: null, portionOptions: [], portionIndex: 0, calorieHint: '', calorieSource: 'manual' as CalorieSource, activeTab: 'square' as TabKey, formFocusAnchor: '', keyboardHeight: 0, pageScrollStyle: '' })
+        this.applySavedRecord(createdRecord)
         await this.loadData()
+        if (!(this.data.myRecords as MyRecord[]).some(record => record.id === createdRecord.id)) this.applySavedRecord(createdRecord)
+        if (!(this.data.approvals as Approval[]).some(item => item.id === approval.id)) {
+          const refreshedApprovals = [approval, ...(this.data.approvals as Approval[])]
+          this.setData({ approvals: refreshedApprovals, filteredApprovals: this.filterApprovals(refreshedApprovals, this.data.activeFilter as FilterKey) })
+        }
         wx.showToast({ title: '审批单已发出', icon: 'success' })
       } catch (error) {
         console.warn('create approval failed', error)
@@ -749,31 +808,21 @@ Component({
         const saved = approvalId
           ? await submitApprovalFood(approvalId, { title: foodName, ...(calorie ? { calorie: Number(calorie) } : {}), image })
           : await createFoodRecord({ title: foodName, ...(calorie ? { calorie: Number(calorie) } : {}), image })
+        const updated = mapApiRecord(saved)
         if (approvalId) {
-          const updated = mapApiRecord(saved)
           updated.isApproval = true
           updated.foodRecorded = true
+          this.markApprovalFoodDecided(approvalId, 'eaten')
           // 旧服务只返回审批原记录；本次表单内容仍先用于当前页面展示，部署新服务后会持久化。
           updated.title = foodName
           updated.calorie = calorie || updated.calorie
-          this.setData({ myRecords: (this.data.myRecords as MyRecord[]).map(record => record.id === approvalId ? updated : record) })
         }
+        this.applySavedRecord(updated)
         this.resetForm()
         this.setData({ activeTab: 'me' as TabKey, formFocusAnchor: '', keyboardHeight: 0, pageScrollStyle: '' })
-        // 保存接口已返回原审批记录，避免立即拉取旧缓存把按钮状态回滚。
-        try {
-          const stats = await fetchStats()
-          this.setData({
-            ...getQuotaState(stats.todayCalories, stats.calorieQuota),
-            savedCalories: stats.savedCalories,
-            approvalRate: stats.approvalRate,
-            approvedCount: stats.approvedCount,
-            submittedCount: stats.submittedCount,
-            topRejected: stats.topRejected,
-          })
-        } catch (statsError) {
-          console.warn('refresh stats after food record failed', statsError)
-        }
+        await this.loadData()
+        this.applySavedRecord(updated)
+        if (approvalId) this.markApprovalFoodDecided(approvalId, 'eaten')
         wx.showToast({ title: '已添加到今日记录', icon: 'success' })
       } catch (error) {
         console.warn('save food record failed', error)
@@ -789,8 +838,11 @@ Component({
       this.setData({ recordActionId: id })
       try {
         const updated = mapApiRecord(await submitCheckIn(id, result))
-        const myRecords = (this.data.myRecords as MyRecord[]).map(record => record.id === id ? updated : record)
-        this.setData({ myRecords })
+        this.applySavedRecord(updated)
+        this.markApprovalFoodDecided(id, result === '真香' ? 'eaten' : 'skipped')
+        await this.loadData()
+        this.applySavedRecord(updated)
+        this.markApprovalFoodDecided(id, result === '真香' ? 'eaten' : 'skipped')
         wx.showToast({ title: `已记录：${result}`, icon: 'success' })
       } catch (error) {
         console.warn('check in failed', error)

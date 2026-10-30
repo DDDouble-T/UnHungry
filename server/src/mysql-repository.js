@@ -1,5 +1,7 @@
 const crypto = require('node:crypto')
 const { conflict, notFound } = require('./errors')
+const { mergeApprovalRecords } = require('./repository')
+const { isApprovalWithinValidity, resolveApprovalOutcome, resolveRecordOutcome } = require('./approval-lifecycle')
 
 function now() {
   return new Date()
@@ -37,13 +39,16 @@ class MySQLRepository {
   }
 
   async listApprovals({ status = 'all', limit = 50 } = {}) {
+    const reference = new Date()
     const params = []
-    let sql = 'SELECT * FROM approvals'
+    let sql = "SELECT approvals.*, EXISTS(SELECT 1 FROM user_records r WHERE r.approvalId = approvals.id AND r.openid = approvals.openid AND (r.foodRecorded = TRUE OR COALESCE(r.checkinResult, '') <> '')) AS foodDecided, (SELECT CASE WHEN r.foodRecorded = TRUE OR r.checkinResult = '真香' THEN 'eaten' WHEN r.checkinResult = '后悔' THEN 'skipped' ELSE '' END FROM user_records r WHERE r.approvalId = approvals.id AND r.openid = approvals.openid LIMIT 1) AS foodResult FROM approvals"
     if (status !== 'all') { sql += ' WHERE status = ?'; params.push(status) }
     sql += ' ORDER BY createdAt DESC LIMIT ?'
     params.push(Number(limit))
     const [rows] = await this.pool.execute(sql, params)
-    return rows.map(approvalRow)
+    return rows
+      .map(row => resolveApprovalOutcome(approvalRow(row), null, reference))
+      .filter(item => isApprovalWithinValidity(item.createdAt, reference))
   }
 
   async listFoods({ keyword = '', limit = 5 } = {}) {
@@ -61,8 +66,8 @@ class MySQLRepository {
   }
 
   async getApproval(approvalId) {
-    const [rows] = await this.pool.execute('SELECT * FROM approvals WHERE id = ?', [approvalId])
-    const item = approvalRow(rows[0])
+    const [rows] = await this.pool.execute("SELECT approvals.*, EXISTS(SELECT 1 FROM user_records r WHERE r.approvalId = approvals.id AND r.openid = approvals.openid AND (r.foodRecorded = TRUE OR COALESCE(r.checkinResult, '') <> '')) AS foodDecided, (SELECT CASE WHEN r.foodRecorded = TRUE OR r.checkinResult = '真香' THEN 'eaten' WHEN r.checkinResult = '后悔' THEN 'skipped' ELSE '' END FROM user_records r WHERE r.approvalId = approvals.id AND r.openid = approvals.openid LIMIT 1) AS foodResult FROM approvals WHERE id = ?", [approvalId])
+    const item = resolveApprovalOutcome(approvalRow(rows[0]), null)
     if (!item) throw notFound('审批单不存在')
     item._id = item.id
     return item
@@ -99,6 +104,9 @@ class MySQLRepository {
       const approval = approvalRow(rows[0])
       if (!approval) throw notFound('审批单不存在')
       if (approval._openid === openid) throw conflict('SELF_VOTE_NOT_ALLOWED', '不能给自己发起的审批投票')
+      if (!isApprovalWithinValidity(approval.createdAt)) throw conflict('APPROVAL_EXPIRED', '这张审批单已过期')
+      const [records] = await connection.execute('SELECT foodRecorded, checkinResult FROM user_records WHERE approvalId = ? AND openid = ? FOR UPDATE', [approvalId, approval._openid])
+      if (records.some(record => record.foodRecorded || record.checkinResult)) throw conflict('APPROVAL_CLOSED', '发起人已选择吃了或没吃，不能继续投票')
       if (approval.status !== 'pending') throw conflict('APPROVAL_CLOSED', '这张审批单已经完成审批')
       const support = approval.support + (input.choice === 'approve' ? 1 : 0)
       const against = approval.against + (input.choice === 'wait' ? 1 : 0)
@@ -117,8 +125,10 @@ class MySQLRepository {
   }
 
   async listRecords(openid) {
+    const reference = new Date()
     const [rows] = await this.pool.execute('SELECT id AS _id, openid AS _openid, approvalId, title, calorie, status, checkinResult, image, foodRecorded, createdAt, updatedAt FROM user_records WHERE openid = ? ORDER BY createdAt DESC LIMIT 100', [openid])
-    return rows.map(recordRow)
+    const [approvalRows] = await this.pool.execute('SELECT * FROM approvals WHERE openid = ? ORDER BY createdAt DESC LIMIT 100', [openid])
+    return mergeApprovalRecords(rows.map(recordRow), approvalRows.map(approvalRow), openid, reference)
   }
 
   async createFoodRecord(input, openid) {
@@ -134,6 +144,7 @@ class MySQLRepository {
     if (!record) throw notFound('没有找到这张审批单的个人记录')
     if (record.foodRecorded) return record
     if (record.checkinResult) throw conflict('RECORD_ALREADY_DECIDED', '这张审批单已经记录过结果')
+    if (!isApprovalWithinValidity(record.createdAt)) throw conflict('APPROVAL_EXPIRED', '这张审批单已过期')
     if (record.status !== 'approved') throw conflict('RECORD_NOT_ALLOWED', '审批通过后才能添加食物')
     const updatedAt = now()
     await this.pool.execute('UPDATE user_records SET title = ?, calorie = ?, image = ?, foodRecorded = TRUE, updatedAt = ? WHERE id = ? AND openid = ? AND foodRecorded = FALSE', [input.title, input.calorie, input.image, updatedAt, record._id, openid])
@@ -150,6 +161,7 @@ class MySQLRepository {
       if (record.checkinResult === result) return record
       throw conflict('RECORD_ALREADY_DECIDED', '这张审批单已经记录过结果')
     }
+    if (!isApprovalWithinValidity(record.createdAt)) throw conflict('APPROVAL_EXPIRED', '这张审批单已过期')
     if (record.status !== 'approved') throw conflict('CHECKIN_NOT_ALLOWED', '审批通过后才能打卡')
     const updatedAt = now()
     await this.pool.execute('UPDATE user_records SET checkinResult = ?, updatedAt = ? WHERE id = ?', [result, updatedAt, record._id])
@@ -158,7 +170,9 @@ class MySQLRepository {
 
   async getStats(openid) {
     const { calculateStats } = require('./repository')
-    return calculateStats(await this.listRecords(openid))
+    const reference = new Date()
+    const [rows] = await this.pool.execute('SELECT id AS _id, openid AS _openid, approvalId, title, calorie, status, checkinResult, image, foodRecorded, createdAt, updatedAt FROM user_records WHERE openid = ? ORDER BY createdAt DESC LIMIT 1000', [openid])
+    return calculateStats(rows.map(recordRow).map(item => resolveRecordOutcome(item, reference)))
   }
 }
 

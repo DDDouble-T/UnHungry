@@ -71,9 +71,11 @@
 | `status` | string | `all` | `all`、`pending`、`approved`、`rejected` |
 | `limit` | integer | `50` | 1 到 100 |
 
-返回 `data` 数组。每项字段：`id`、`authorName`、`authorAvatar`、`isAnonymous`、`status`、`statusLabel`、`title`、`price`、`calorie`、`reason`、`alternative`、`intake`、`image`、`createdAt`、`support`、`against`、`totalVotes`、`supportRate`、`tags`、`emoji`。
+返回 `data` 数组。每项字段：`id`、`authorName`、`authorAvatar`、`isAnonymous`、`status`、`statusLabel`、`title`、`price`、`calorie`、`reason`、`alternative`、`intake`、`image`、`createdAt`、`support`、`against`、`totalVotes`、`supportRate`、`tags`、`emoji`、`foodDecided`、`foodResult`。
 
 默认显示 `authorName` 和 `authorAvatar`。当 `isAnonymous=true` 时，`authorName` 和 `authorAvatar` 均返回空字符串，客户端显示“匿名”；历史审批单缺少匿名选项时保留匿名展示。
+
+`foodDecided` 为布尔值，表示发起人是否已选择“吃了/没吃”（兼容历史打卡）。`foodResult` 返回 `eaten`（吃了）、`skipped`（没吃）或空字符串（未选择），供广场显示彩色结果文字；已选择的审批单禁止继续投票。审批有效期为创建后的 72 小时，由 `server/src/config.js` 的 `APPROVAL_VALID_DAYS` 配置。有效期内广场只返回未过期审批；过期时，通过的审批默认 `eaten`，未通过或仍待投票的审批默认 `skipped`，过期审批不再接受投票或打卡。默认结果按读取时推导，不回写用户记录。
 
 `GET /api/v1/approvals/:approvalId` 返回同样的审批单对象。不存在时返回 `404 NOT_FOUND`。
 
@@ -153,7 +155,7 @@ against > support        => rejected
 
 `GET /api/v1/me/records`
 
-返回当前身份的审批记录和独立饮食记录，按 `createdAt` 倒序。字段为：`id`、`title`、`time`、`calorie`、`status`、`statusLabel`、`checkinResult`；审批记录另含 `recordId`（个人记录 ID）。独立记录的 `status` 为 `logged`，其 `id` 是记录 ID。
+返回当前身份最近的记录并按 `createdAt` 倒序：只包含今天创建的独立饮食记录，以及审批创建后 72 小时内的审批记录。字段为：`id`、`title`、`time`、`calorie`、`status`、`statusLabel`、`checkinResult`、`foodRecorded`；审批记录另含 `recordId`（个人记录 ID）。独立记录的 `status` 为 `logged`，其 `id` 是记录 ID。统计接口仍按全部历史记录统计，过期未选择的审批按默认结果计入。
 
 `POST /api/v1/me/records` 新增独立记录，请求体为 `{ "title": "米饭", "calorie": 230, "image": "" }`。名称必填，热量和图片选填。
 
@@ -191,7 +193,7 @@ against > support        => rejected
 { "result": "真香" }
 ```
 
-`result` 只能是 `真香` 或 `后悔`。记录不存在返回 `404 NOT_FOUND`，审批未通过返回 `409 CHECKIN_NOT_ALLOWED`。成功返回更新后的记录。
+`result` 只能是 `真香` 或 `后悔`。记录不存在返回 `404 NOT_FOUND`，审批未通过返回 `409 CHECKIN_NOT_ALLOWED`，已超过 72 小时返回 `409 APPROVAL_EXPIRED`。成功返回更新后的记录。
 
 ## 4. 错误码
 
@@ -209,6 +211,7 @@ against > support        => rejected
 | 409 | `DUPLICATE_VOTE` | 当前用户已经投过该审批单 |
 | 409 | `SELF_VOTE_NOT_ALLOWED` | 当前用户不能给自己发起的审批投票 |
 | 409 | `APPROVAL_CLOSED` | 审批单已经结束 |
+| 409 | `APPROVAL_EXPIRED` | 审批单已超过 72 小时有效期 |
 | 409 | `CHECKIN_NOT_ALLOWED` | 审批未通过，不能打卡 |
 | 413 | `PAYLOAD_TOO_LARGE` | 请求体超过 64KB |
 

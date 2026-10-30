@@ -18,6 +18,8 @@ function approval(item) {
     intake: item.intake,
     image: item.image || '',
     createdAt: item.createdAt,
+    foodDecided: Boolean(item.foodDecided),
+    foodResult: item.foodResult === 'eaten' || item.foodResult === 'skipped' ? item.foodResult : '',
     support: item.support,
     against: item.against,
     totalVotes: item.totalVotes,
@@ -56,6 +58,7 @@ function stats(value) {
 function approvalMessage(item) {
   return {
     id: item._id || item.id,
+    approvalId: item.approvalId || '',
     text: item.reason || item.text || '',
     createdAt: item.createdAt,
   }
